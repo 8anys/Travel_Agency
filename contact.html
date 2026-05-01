@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
   <head>
-    <title>Vacation - Free Bootstrap 4 Template by Colorlib</title>
+    <title>Контакти | Мандруй з нами</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     
@@ -40,7 +40,7 @@
             <li class="nav-item"><a href="about.html" class="nav-link">Про нас</a></li>
             <li class="nav-item"><a href="destination.html" class="nav-link">Місця</a></li>
             <li class="nav-item"><a href="contact.html" class="nav-link">Контакти</a></li>
-            <li class="nav-item cta"><a href="#" class="nav-link">Забронювати зараз</a></li>
+            <li class="nav-item cta"><a href="#register-modal" class="nav-link js-open-register">Забронювати зараз</a></li>
           </ul>
           </div>
 	    </div>
@@ -77,7 +77,7 @@
           			<span class="icon-phone2"></span>
           		</div>
           		<h3 class="mb-2">Контактний номер</h3>
-	            <p><a href="tel://1234567920">+ 1235 2355 98</a></p>
+	            <p><a href="tel:+380975552418">+38 (097) 555-24-18</a></p>
 	          </div>
           </div>
           <div class="col-md-3 d-flex">
@@ -86,7 +86,7 @@
           			<span class="icon-paper-plane"></span>
           		</div>
           		<h3 class="mb-2">Адреса електронної пошти</h3>
-	            <p><a href="mailto:info@yoursite.com">info@yoursite.com</a></p>
+	            <p><a href="mailto:travelagency.vn@gmail.com">travelagency.vn@gmail.com</a></p>
 	          </div>
           </div>
           <div class="col-md-3 d-flex">
@@ -95,7 +95,7 @@
           			<span class="icon-globe"></span>
           		</div>
           		<h3 class="mb-2">Веб-сайт</h3>
-	            <p><a href="#">yoursite.com</a></p>
+	            <p><a href="index.html">travel-agency.local</a></p>
 	          </div>
           </div>
         </div>
@@ -107,18 +107,19 @@
       <div class="container">
         <div class="row block-9">
           <div class="col-md-6 order-md-last d-flex">
-            <form action="#" class="bg-light p-5 contact-form">
+            <form action="#" class="bg-light p-5 contact-form js-contact-form" novalidate>
+              <div class="contact-form__alert js-contact-alert" hidden></div>
               <div class="form-group">
-                <input type="text" class="form-control" placeholder="Ваше ім'я">
+                <input type="text" name="name" class="form-control" placeholder="Ваше ім'я" required>
               </div>
               <div class="form-group">
-                <input type="text" class="form-control" placeholder="Ваш Email">
+                <input type="email" name="email" class="form-control" placeholder="Ваш Email" required>
               </div>
               <div class="form-group">
-                <input type="text" class="form-control" placeholder="Тема">
+                <input type="text" name="subject" class="form-control" placeholder="Тема" required>
               </div>
               <div class="form-group">
-                <textarea name="" id="" cols="30" rows="7" class="form-control" placeholder="Повідомлення"></textarea>
+                <textarea name="message" id="contact-message" cols="30" rows="7" class="form-control" placeholder="Повідомлення" required></textarea>
               </div>
               <div class="form-group">
                 <input type="submit" value="Відправити Повідомлення" class="btn btn-primary py-3 px-5">
@@ -128,7 +129,7 @@
           </div>
 
           <div class="col-md-6 d-flex">
-          	<div id="map" class="bg-white"></div>
+          	<iframe class="contact-map-frame" title="Карта офісу у Вінниці" src="https://www.google.com/maps?q=%D0%B2%D1%83%D0%BB%D0%B8%D1%86%D1%8F%20%D0%A1%D1%82%D0%B5%D0%BB%D1%8C%D0%BC%D0%B0%D1%85%D0%B0%2031%2C%20%D0%92%D1%96%D0%BD%D0%BD%D0%B8%D1%86%D1%8F&z=15&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
           </div>
         </div>
       </div>
@@ -180,8 +181,8 @@
             <div class="block-23 mb-3">
             <ul>
               <li><span class="icon icon-map-marker"></span><span class="text"> вул.Стельмаха 31. Вінниця, Віннцька область, UA</span></li>
-					  <li><a href="#"><span class="icon icon-phone"></span><span class="text">+2 392 3929 210</span></a></li>
-					  <li><a href="#"><span class="icon icon-envelope"></span><span class="text">info@yourdomain.com</span></a></li>
+					  <li><a href="tel:+380975552418"><span class="icon icon-phone"></span><span class="text">+38 (097) 555-24-18</span></a></li>
+					  <li><a href="mailto:travelagency.vn@gmail.com"><span class="icon icon-envelope"></span><span class="text">travelagency.vn@gmail.com</span></a></li>
             </ul>
             </div>
           </div>
@@ -197,6 +198,81 @@
     
   
 
+
+	<div class="booking-modal" id="register-modal" aria-hidden="true">
+  <div class="booking-modal__backdrop js-close-register"></div>
+  <div class="booking-modal__dialog booking-auth" role="dialog" aria-modal="true" aria-labelledby="register-modal-title">
+    <button type="button" class="booking-modal__close js-close-register" aria-label="Закрити форму">
+      <span class="ion-ios-close"></span>
+    </button>
+    <div class="booking-modal__content booking-auth__content">
+      <div class="booking-auth__intro">
+        <span class="booking-auth__eyebrow">Travel account</span>
+        <h2 class="booking-auth__title" id="register-modal-title">Керуйте бронюваннями в одному місці</h2>
+        <p class="booking-auth__lead">Створіть акаунт або увійдіть, щоб зберігати подорожі, відстежувати заявки та швидше бронювати тури.</p>
+      </div>
+
+      <div class="booking-auth__surface">
+        <div class="booking-modal__alert js-auth-alert" hidden></div>
+
+        <div class="booking-auth__switch" role="tablist" aria-label="Режим авторизації">
+          <button type="button" class="booking-auth__tab is-active js-auth-tab" data-auth-mode="register">Реєстрація</button>
+          <button type="button" class="booking-auth__tab js-auth-tab" data-auth-mode="login">Вхід</button>
+        </div>
+
+        <button type="button" class="booking-auth__google js-google-auth">
+          <span class="booking-auth__google-mark">G</span>
+          <span>Продовжити з Google</span>
+        </button>
+
+        <div class="booking-auth__divider"><span>або</span></div>
+
+        <form class="booking-auth__form js-auth-form" novalidate>
+          <input type="hidden" name="mode" value="register">
+
+          <div class="booking-auth__grid">
+            <div class="form-group js-auth-field" data-auth-only="register">
+              <label for="auth-name">Ім'я та прізвище</label>
+              <input id="auth-name" name="name" type="text" class="form-control" placeholder="Вкажіть ваше ім'я">
+            </div>
+
+            <div class="form-group js-auth-field" data-auth-only="register">
+              <label for="auth-phone">Телефон</label>
+              <input id="auth-phone" name="phone" type="tel" class="form-control" placeholder="+38 (0__) ___-__-__">
+            </div>
+
+            <div class="form-group booking-auth__full">
+              <label for="auth-email">Email</label>
+              <input id="auth-email" name="email" type="email" class="form-control" placeholder="example@email.com" required>
+            </div>
+
+            <div class="form-group">
+              <label for="auth-password">Пароль</label>
+              <input id="auth-password" name="password" type="password" class="form-control" placeholder="Мінімум 6 символів" required>
+            </div>
+
+            <div class="form-group js-auth-field" data-auth-only="register">
+              <label for="auth-password-confirm">Підтвердження пароля</label>
+              <input id="auth-password-confirm" name="passwordConfirm" type="password" class="form-control" placeholder="Повторіть пароль">
+            </div>
+          </div>
+
+          <div class="form-group booking-auth__checkbox js-auth-field" data-auth-only="register">
+            <label>
+              <input type="checkbox" name="policy">
+              <span>Погоджуюся на обробку персональних даних для оформлення бронювання</span>
+            </label>
+          </div>
+
+          <div class="booking-auth__footer">
+            <button type="submit" class="btn btn-primary booking-auth__submit js-auth-submit">Створити акаунт</button>
+            <p class="booking-auth__hint js-auth-hint">Після реєстрації ми збережемо ваш профіль локально до підключення бази даних.</p>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
   <!-- loader -->
   <div id="ftco-loader" class="show fullscreen"><svg class="circular" width="48px" height="48px"><circle class="path-bg" cx="24" cy="24" r="22" fill="none" stroke-width="4" stroke="#eeeeee"/><circle class="path" cx="24" cy="24" r="22" fill="none" stroke-width="4" stroke-miterlimit="10" stroke="#F96D00"/></svg></div>
 
@@ -214,8 +290,8 @@
   <script src="js/jquery.animateNumber.min.js"></script>
   <script src="js/bootstrap-datepicker.js"></script>
   <script src="js/scrollax.min.js"></script>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBVWaKrjvy3MaE7SQ74_uJiULgl1JY0H2s&sensor=false"></script>
-  <script src="js/google-map.js"></script>
+
+
   <script src="js/main.js"></script>
     
   </body>
