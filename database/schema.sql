@@ -1,0 +1,45 @@
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) DEFAULT '',
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash TEXT DEFAULT NULL,
+    provider VARCHAR(50) NOT NULL DEFAULT 'local',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS tours (
+    id BIGSERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    country VARCHAR(255) NOT NULL,
+    city VARCHAR(255) NOT NULL,
+    price NUMERIC(10,2) NOT NULL,
+    duration_days INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    image VARCHAR(255) DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bookings (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tour_id BIGINT NOT NULL REFERENCES tours(id) ON DELETE CASCADE,
+    date_from DATE NOT NULL,
+    people_count INTEGER NOT NULL DEFAULT 1,
+    notes TEXT DEFAULT '',
+    status VARCHAR(100) NOT NULL DEFAULT 'Нова заявка',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_bookings_user_id ON bookings(user_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_tour_id ON bookings(tour_id);
+CREATE INDEX IF NOT EXISTS idx_messages_email ON messages(email);

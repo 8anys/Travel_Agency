@@ -1,19 +1,36 @@
-AOS.init({
- 	duration: 800,
- 	easing: 'slide'
+﻿AOS.init({
+	duration: 800,
+	easing: 'slide'
 });
 
 (function($) {
-
 	"use strict";
 
-	var isMobile = {
-		Android: function() { return navigator.userAgent.match(/Android/i); },
-		BlackBerry: function() { return navigator.userAgent.match(/BlackBerry/i); },
-		iOS: function() { return navigator.userAgent.match(/iPhone|iPad|iPod/i); },
-		Opera: function() { return navigator.userAgent.match(/Opera Mini/i); },
-		Windows: function() { return navigator.userAgent.match(/IEMobile/i); },
-		any: function() { return (isMobile.Android() || isMobile.BlackBerry() || isMobile.iOS() || isMobile.Opera() || isMobile.Windows()); }
+	var authState = { user: null, checked: false };
+	var toursCache = [];
+
+	var apiRequest = function(url, options) {
+		return fetch(url, Object.assign({
+			credentials: 'same-origin',
+			headers: { 'Accept': 'application/json' }
+		}, options || {})).then(function(response) {
+			return response.json().catch(function() {
+				return { ok: false, message: '\u0421\u0435\u0440\u0432\u0435\u0440 \u043f\u043e\u0432\u0435\u0440\u043d\u0443\u0432 \u043d\u0435\u043a\u043e\u0440\u0435\u043a\u0442\u043d\u0443 \u0432\u0456\u0434\u043f\u043e\u0432\u0456\u0434\u044c.' };
+			}).then(function(data) {
+				if (!response.ok) {
+					data.ok = false;
+				}
+				return data;
+			});
+		});
+	};
+
+	var formBody = function(payload) {
+		var params = new URLSearchParams();
+		Object.keys(payload).forEach(function(key) {
+			params.append(key, payload[key]);
+		});
+		return params.toString();
 	};
 
 	$(window).stellar({ responsive: true, parallaxBackgrounds: true, parallaxElements: true, horizontalScrolling: false, hideDistantElements: false, scrollProperty: 'scroll' });
@@ -77,10 +94,10 @@ AOS.init({
 	var counter = function() {
 		$('#section-counter, .hero-wrap, .ftco-counter').waypoint(function(direction) {
 			if (direction === 'down' && !$(this.element).hasClass('ftco-animated')) {
-				var comma_separator_number_step = $.animateNumber.numberStepFactories.separator(',');
+				var commaSeparator = $.animateNumber.numberStepFactories.separator(',');
 				$('.number').each(function(){
 					var $this = $(this), num = $this.data('number');
-					$this.animateNumber({ number: num, numberStep: comma_separator_number_step }, 7000);
+					$this.animateNumber({ number: num, numberStep: commaSeparator }, 7000);
 				});
 			}
 		}, { offset: '95%' });
@@ -110,11 +127,11 @@ AOS.init({
 	contentWayPoint();
 
 	var onePageNav = function() {
-		$('.smoothscroll[href^="#"], #ftco-nav ul li a[href^="#"]').on('click', function(e) {
-			e.preventDefault();
+		$('.smoothscroll[href^="#"], #ftco-nav ul li a[href^="#"]').not('.js-open-register').on('click', function(e) {
 			var hash = this.hash;
 			var navToggler = $('.navbar-toggler');
 			if (!hash || !$(hash).length) { return; }
+			e.preventDefault();
 			$('html, body').animate({ scrollTop: $(hash).offset().top }, 700, 'easeInOutExpo', function(){ window.location.hash = hash; });
 			if (navToggler.is(':visible')) { navToggler.click(); }
 		});
@@ -122,22 +139,36 @@ AOS.init({
 	onePageNav();
 
 	$('.image-popup').magnificPopup({
-    type: 'image', closeOnContentClick: true, closeBtnInside: false, fixedContentPos: true,
-    mainClass: 'mfp-no-margins mfp-with-zoom', gallery: { enabled: true, navigateByImgClick: true, preload: [0,1] }, image: { verticalFit: true }, zoom: { enabled: true, duration: 300 }
-  });
+		type: 'image', closeOnContentClick: true, closeBtnInside: false, fixedContentPos: true,
+		mainClass: 'mfp-no-margins mfp-with-zoom', gallery: { enabled: true, navigateByImgClick: true, preload: [0,1] }, image: { verticalFit: true }, zoom: { enabled: true, duration: 300 }
+	});
 
-  $('.popup-youtube, .popup-vimeo, .popup-gmaps').magnificPopup({ disableOn: 700, type: 'iframe', mainClass: 'mfp-fade', removalDelay: 160, preloader: false, fixedContentPos: false });
+	$('.popup-youtube, .popup-vimeo, .popup-gmaps').magnificPopup({ disableOn: 700, type: 'iframe', mainClass: 'mfp-fade', removalDelay: 160, preloader: false, fixedContentPos: false });
+	$('.checkin_date, .checkout_date').datepicker({ format: 'm/d/yyyy', autoclose: true });
 
-  $('.checkin_date, .checkout_date').datepicker({ format: 'm/d/yyyy', autoclose: true });
+	var updateAuthUi = function() {
+		var $ctaLinks = $('.js-open-register');
+		if (authState.user && authState.user.name) {
+			$ctaLinks.text('\u041a\u0430\u0431\u0456\u043d\u0435\u0442: ' + authState.user.name.split(' ')[0]);
+		} else {
+			$ctaLinks.text('\u0417\u0430\u0431\u0440\u043e\u043d\u044e\u0432\u0430\u0442\u0438 \u0437\u0430\u0440\u0430\u0437');
+		}
+		document.dispatchEvent(new CustomEvent('travel-auth-updated', { detail: authState.user }));
+	};
+
+	var fetchAuthStatus = function() {
+		return apiRequest('/api/auth/status').then(function(data) {
+			authState.user = data.user || null;
+			authState.checked = true;
+			updateAuthUi();
+			return data;
+		});
+	};
 
 	var registrationModal = function() {
 		var $modal = $('#register-modal');
 		if (!$modal.length) { return; }
-
-		var storageKey = 'travelAgencyUsers';
-		var sessionKey = 'travelAgencySession';
 		var $body = $('body');
-		var $ctaLinks = $('.js-open-register');
 		var $tabs = $modal.find('.js-auth-tab');
 		var $form = $modal.find('.js-auth-form');
 		var $alert = $modal.find('.js-auth-alert');
@@ -145,37 +176,8 @@ AOS.init({
 		var $hint = $modal.find('.js-auth-hint');
 		var $mode = $form.find('[name="mode"]');
 		var $registerOnlyFields = $modal.find('.js-auth-field[data-auth-only="register"]');
-		var registerHint = 'Після реєстрації ми збережемо ваш профіль локально до підключення бази даних.';
-		var loginHint = 'Якщо акаунт уже існує, увійдіть з email і паролем, щоб продовжити бронювання.';
-
-		var readUsers = function() {
-			try {
-				return JSON.parse(window.localStorage.getItem(storageKey)) || [];
-			} catch (error) {
-				return [];
-			}
-		};
-
-		var saveUsers = function(users) {
-			window.localStorage.setItem(storageKey, JSON.stringify(users));
-		};
-
-		var readSession = function() {
-			try {
-				return JSON.parse(window.localStorage.getItem(sessionKey));
-			} catch (error) {
-				return null;
-			}
-		};
-
-		var saveSession = function(user) {
-			window.localStorage.setItem(sessionKey, JSON.stringify({
-				name: user.name,
-				email: user.email,
-				provider: user.provider || 'local',
-				loggedInAt: new Date().toISOString()
-			}));
-		};
+		var registerHint = '\u041f\u0456\u0441\u043b\u044f \u0440\u0435\u0454\u0441\u0442\u0440\u0430\u0446\u0456\u0457 \u043f\u0440\u043e\u0444\u0456\u043b\u044c \u043f\u043e\u0442\u0440\u0430\u043f\u0438\u0442\u044c \u0443 \u0431\u0430\u0437\u0443 \u0434\u0430\u043d\u0438\u0445 \u0456 \u0431\u0443\u0434\u0435 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0438\u0439 \u0443 \u0432\u0430\u0448\u043e\u043c\u0443 \u043a\u0430\u0431\u0456\u043d\u0435\u0442\u0456.';
+		var loginHint = '\u0423\u0432\u0456\u0439\u0434\u0456\u0442\u044c \u0443 \u0432\u0436\u0435 \u0441\u0442\u0432\u043e\u0440\u0435\u043d\u0438\u0439 \u0430\u043a\u0430\u0443\u043d\u0442, \u0449\u043e\u0431 \u043f\u0435\u0440\u0435\u0433\u043b\u044f\u043d\u0443\u0442\u0438 \u0441\u0432\u043e\u0457 \u0431\u0440\u043e\u043d\u044e\u0432\u0430\u043d\u043d\u044f \u0456 \u0441\u0442\u0432\u043e\u0440\u0438\u0442\u0438 \u043d\u043e\u0432\u0456.';
 
 		var setAlert = function(message, isSuccess) {
 			$alert.text(message).toggleClass('is-success', !!isSuccess).prop('hidden', false);
@@ -185,15 +187,6 @@ AOS.init({
 			$alert.prop('hidden', true).removeClass('is-success').text('');
 		};
 
-		var updateCta = function() {
-			var session = readSession();
-			if (session && session.name) {
-				$ctaLinks.text('Кабінет: ' + session.name.split(' ')[0]);
-			} else {
-				$ctaLinks.text('Забронювати зараз');
-			}
-		};
-
 		var setMode = function(mode) {
 			var isRegister = mode === 'register';
 			$mode.val(mode);
@@ -201,8 +194,9 @@ AOS.init({
 			$tabs.filter('[data-auth-mode="' + mode + '"]').addClass('is-active');
 			$modal.attr('data-auth-mode', mode);
 			$registerOnlyFields.toggleClass('is-hidden', !isRegister);
-			$form.find('[name="name"], [name="phone"], [name="passwordConfirm"], [name="policy"]').prop('required', isRegister);
-			$submit.text(isRegister ? 'Створити акаунт' : 'Увійти в акаунт');
+			$registerOnlyFields.find('input').prop('required', isRegister);
+			$form.find('[name="policy"]').prop('required', isRegister);
+			$submit.text(isRegister ? '\u0421\u0442\u0432\u043e\u0440\u0438\u0442\u0438 \u0430\u043a\u0430\u0443\u043d\u0442' : '\u0423\u0432\u0456\u0439\u0442\u0438 \u0432 \u0430\u043a\u0430\u0443\u043d\u0442');
 			$hint.text(isRegister ? registerHint : loginHint);
 			clearAlert();
 		};
@@ -218,158 +212,85 @@ AOS.init({
 			$body.removeClass('modal-open');
 		};
 
-		var findUserByEmail = function(email) {
-			var normalized = email.toLowerCase();
-			return readUsers().find(function(user) { return user.email.toLowerCase() === normalized; });
-		};
-
-		var createGoogleUser = function(email) {
-			var users = readUsers();
-			var existing = users.find(function(user) { return user.email.toLowerCase() === email.toLowerCase(); });
-			if (existing) {
-				saveSession(existing);
-				updateCta();
-				setAlert('Вхід через Google виконано. Раді бачити вас знову.', true);
-				setTimeout(closeModal, 1200);
+		$('.js-open-register').on('click', function(event) {
+			event.preventDefault();
+			if (authState.user) {
+				window.location.href = 'cabinet.html';
 				return;
 			}
-
-			var displayName = email.split('@')[0].replace(/[._-]+/g, ' ');
-			displayName = displayName.replace(/\b\w/g, function(char) { return char.toUpperCase(); });
-			var user = {
-				name: displayName,
-				email: email,
-				phone: '',
-				password: '',
-				provider: 'google',
-				createdAt: new Date().toISOString()
-			};
-			users.push(user);
-			saveUsers(users);
-			saveSession(user);
-			updateCta();
-			setAlert('Google-акаунт додано. Після підключення бекенду сюди можна підв’язати справжню OAuth-авторизацію.', true);
-			setTimeout(closeModal, 1500);
-		};
-
-		$ctaLinks.on('click', function(event) {
-			event.preventDefault();
-			openModal('register');
+			openModal($(this).data('authMode') || 'register');
 		});
 
-		$modal.find('.js-close-register').on('click', function() {
-			closeModal();
-		});
-
-		$tabs.on('click', function() {
-			setMode($(this).data('auth-mode'));
-		});
+		$modal.find('.js-close-register').on('click', function() { closeModal(); });
+		$tabs.on('click', function() { setMode($(this).data('auth-mode')); });
+		$(document).on('keydown', function(event) { if (event.key === 'Escape' && $modal.hasClass('is-open')) { closeModal(); } });
 
 		$modal.find('.js-google-auth').on('click', function() {
 			clearAlert();
-			var googleEmail = window.prompt('Введіть ваш Google email для демо-входу:', 'traveler@gmail.com');
-			if (!googleEmail) { return; }
-			var normalizedEmail = $.trim(googleEmail).toLowerCase();
-			var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-			if (!emailPattern.test(normalizedEmail)) {
-				setAlert('Вкажіть коректний email для входу через Google.', false);
-				return;
-			}
-			createGoogleUser(normalizedEmail);
-		});
-
-		$(document).on('keydown', function(event) {
-			if (event.key === 'Escape' && $modal.hasClass('is-open')) {
-				closeModal();
-			}
+			var email = window.prompt('\u0412\u0432\u0435\u0434\u0456\u0442\u044c \u0432\u0430\u0448 Google email \u0434\u043b\u044f \u0432\u0445\u043e\u0434\u0443:', 'traveler@gmail.com');
+			if (!email) { return; }
+			apiRequest('/api/auth', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+				body: formBody({ action: 'google', email: email })
+			}).then(function(data) {
+				if (!data.ok) {
+					setAlert(data.message || '\u041d\u0435 \u0432\u0434\u0430\u043b\u043e\u0441\u044f \u0432\u0438\u043a\u043e\u043d\u0430\u0442\u0438 \u0432\u0445\u0456\u0434 \u0447\u0435\u0440\u0435\u0437 Google.', false);
+					return;
+				}
+				authState.user = data.user || null;
+				updateAuthUi();
+				setAlert(data.message || '\u0412\u0445\u0456\u0434 \u0447\u0435\u0440\u0435\u0437 Google \u0432\u0438\u043a\u043e\u043d\u0430\u043d\u043e.', true);
+				setTimeout(function() { closeModal(); window.location.href = 'cabinet.html'; }, 900);
+			});
 		});
 
 		$form.on('submit', function(event) {
 			event.preventDefault();
 			clearAlert();
-
 			var mode = $mode.val();
-			var name = $.trim($form.find('[name="name"]').val());
-			var phone = $.trim($form.find('[name="phone"]').val());
-			var email = $.trim($form.find('[name="email"]').val()).toLowerCase();
-			var password = $form.find('[name="password"]').val();
-			var passwordConfirm = $form.find('[name="passwordConfirm"]').val();
-			var acceptedPolicy = $form.find('[name="policy"]').is(':checked');
-			var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+			var payload = {
+				action: mode,
+				name: $.trim($form.find('[name="name"]').val()),
+				phone: $.trim($form.find('[name="phone"]').val()),
+				email: $.trim($form.find('[name="email"]').val()),
+				password: $form.find('[name="password"]').val(),
+				passwordConfirm: $form.find('[name="passwordConfirm"]').val(),
+				policy: $form.find('[name="policy"]').is(':checked') ? 'true' : 'false'
+			};
 
-			if (!email || !password) {
-				setAlert('Вкажіть email і пароль, щоб продовжити.', false);
-				return;
-			}
-
-			if (!emailPattern.test(email)) {
-				setAlert('Введіть коректний email.', false);
-				return;
-			}
-
-			if (mode === 'register') {
-				if (!name || !phone || !passwordConfirm) {
-					setAlert('Будь ласка, заповніть усі поля для реєстрації.', false);
+			apiRequest('/api/auth', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+				body: formBody(payload)
+			}).then(function(data) {
+				if (!data.ok) {
+					setAlert(data.message || '\u0421\u0442\u0430\u043b\u0430\u0441\u044f \u043f\u043e\u043c\u0438\u043b\u043a\u0430. \u0421\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0449\u0435 \u0440\u0430\u0437.', false);
 					return;
 				}
-				if (password.length < 6) {
-					setAlert('Пароль має містити щонайменше 6 символів.', false);
-					return;
-				}
-				if (password !== passwordConfirm) {
-					setAlert('Паролі не співпадають. Перевірте введені дані.', false);
-					return;
-				}
-				if (!acceptedPolicy) {
-					setAlert('Потрібно погодитися на обробку персональних даних.', false);
-					return;
-				}
-				if (findUserByEmail(email)) {
-					setAlert('Акаунт з таким email уже існує. Перейдіть у вкладку "Вхід".', false);
-					return;
-				}
-
-				var users = readUsers();
-				var user = {
-					name: name,
-					phone: phone,
-					email: email,
-					password: password,
-					provider: 'local',
-					createdAt: new Date().toISOString()
-				};
-				users.push(user);
-				saveUsers(users);
-				saveSession(user);
+				authState.user = data.user || null;
+				updateAuthUi();
 				$form[0].reset();
-				updateCta();
-				setAlert('Акаунт створено. Тепер ви можете переходити до бронювання.', true);
-				setTimeout(closeModal, 1300);
-				return;
-			}
-
-			var existingUser = findUserByEmail(email);
-			if (!existingUser) {
-				setAlert('Користувача з таким email не знайдено. Спершу зареєструйтеся.', false);
-				return;
-			}
-			if (existingUser.provider === 'google') {
-				setAlert('Для цього акаунта використайте кнопку "Продовжити з Google".', false);
-				return;
-			}
-			if (existingUser.password !== password) {
-				setAlert('Неправильний пароль. Спробуйте ще раз.', false);
-				return;
-			}
-
-			saveSession(existingUser);
-			$form[0].reset();
-			updateCta();
-			setAlert('Вхід виконано успішно. Раді бачити вас знову.', true);
-			setTimeout(closeModal, 1200);
+				setAlert(data.message || '\u041e\u043f\u0435\u0440\u0430\u0446\u0456\u044e \u0432\u0438\u043a\u043e\u043d\u0430\u043d\u043e \u0443\u0441\u043f\u0456\u0448\u043d\u043e.', true);
+				setTimeout(function() { closeModal(); window.location.href = 'cabinet.html'; }, 900);
+			});
 		});
 
-		updateCta();
+		$(document).on('click', '.js-logout', function(event) {
+			event.preventDefault();
+			apiRequest('/api/auth', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+				body: formBody({ action: 'logout' })
+			}).then(function() {
+				authState.user = null;
+				updateAuthUi();
+				if ($('.js-cabinet-page').length) {
+					window.location.reload();
+				}
+			});
+		});
+
 		setMode('register');
 	};
 	registrationModal();
@@ -378,29 +299,145 @@ AOS.init({
 		var $form = $('.js-contact-form');
 		if (!$form.length) { return; }
 		var $alert = $form.find('.js-contact-alert');
-		var storageKey = 'travelAgencyContactMessages';
 		var showAlert = function(message, isSuccess) { $alert.text(message).toggleClass('is-success', !!isSuccess).prop('hidden', false); };
 
 		$form.on('submit', function(event) {
 			event.preventDefault();
 			$alert.prop('hidden', true).removeClass('is-success').text('');
-			var form = event.currentTarget;
 			var payload = {
-				name: $.trim($(form).find('[name="name"]').val()),
-				email: $.trim($(form).find('[name="email"]').val()),
-				subject: $.trim($(form).find('[name="subject"]').val()),
-				message: $.trim($(form).find('[name="message"]').val()),
-				createdAt: new Date().toISOString()
+				name: $.trim($form.find('[name="name"]').val()),
+				email: $.trim($form.find('[name="email"]').val()),
+				subject: $.trim($form.find('[name="subject"]').val()),
+				message: $.trim($form.find('[name="message"]').val())
 			};
-			if (!payload.name || !payload.email || !payload.subject || !payload.message) { showAlert('Будь ласка, заповніть усі поля форми зворотного зв’язку.', false); return; }
-			var messages = [];
-			try { messages = JSON.parse(window.localStorage.getItem(storageKey)) || []; } catch (error) { messages = []; }
-			messages.push(payload);
-			window.localStorage.setItem(storageKey, JSON.stringify(messages));
-			form.reset();
-			showAlert('Ваше повідомлення збережено. Після підключення бази даних воно автоматично надсилатиметься менеджеру.', true);
+			apiRequest('/api/contact', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+				body: formBody(payload)
+			}).then(function(data) {
+				if (!data.ok) {
+					showAlert(data.message || '?? ??????? ?????????? ????????????.', false);
+					return;
+				}
+				$form[0].reset();
+				showAlert(data.message || '???????????? ?????????.', true);
+			});
 		});
 	};
 	contactForm();
+
+	var attachBookingButtons = function() {
+		var $cards = $('.project-wrap .text');
+		if (!$cards.length) { return; }
+		if (!toursCache.length) {
+			apiRequest('/api/tours').then(function(data) {
+				toursCache = data.tours || [];
+				attachBookingButtons();
+			});
+			return;
+		}
+
+		$cards.each(function(index) {
+			var $text = $(this);
+			if ($text.find('.js-book-tour').length) { return; }
+			var tour = toursCache[index];
+			if (!tour) { return; }
+			$text.append('<div class="booking-tour-action"><button type="button" class="btn btn-primary js-book-tour" data-tour-id="' + tour.id + '" data-tour-title="' + tour.title.replace(/"/g, '&quot;') + '">??????????? ???</button></div>');
+		});
+	};
+
+	var bookingHandler = function() {
+		$(document).on('click', '.js-book-tour', function() {
+			if (!authState.user) {
+				var $trigger = $('.js-open-register').first();
+				$trigger.attr('data-auth-mode', 'login').trigger('click').removeAttr('data-auth-mode');
+				return;
+			}
+
+			var tourId = $(this).data('tour-id');
+			var tourTitle = $(this).data('tour-title');
+			var dateFrom = window.prompt('??????? ?????? ???? ??????? ??????? ??? ???? "' + tourTitle + '" (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
+			if (!dateFrom) { return; }
+			var peopleCount = window.prompt('??????? ????? ???? ?????????????', '2');
+			if (!peopleCount) { return; }
+			var notes = window.prompt("????????? ????????? ?? ?????????? (??????'??????):", '') || '';
+
+			apiRequest('/api/bookings', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+				body: formBody({ tour_id: tourId, date_from: dateFrom, people_count: peopleCount, notes: notes })
+			}).then(function(data) {
+				if (!data.ok) {
+					window.alert(data.message || '?? ??????? ???????? ??????????.');
+					return;
+				}
+				window.alert(data.message || '?????????? ????????.');
+			});
+		});
+	};
+	bookingHandler();
+
+	var cabinetPage = function() {
+		var $page = $('.js-cabinet-page');
+		if (!$page.length) { return; }
+		var $summary = $('.js-cabinet-summary');
+		var $bookings = $('.js-cabinet-bookings');
+
+		var renderGuest = function() {
+			$summary.html('<div class="cabinet-empty"><h3>???????? ? ???? ??????</h3><p>????? ????? ??? ?????????? ???? ??????????, ????????? ???? ?? ??????? ???????.</p><button type="button" class="btn btn-primary js-open-register">?????? ??? ???????????????</button></div>');
+			$bookings.html('');
+		};
+
+		var renderProfile = function(profileData, bookingsData) {
+			var user = profileData.user;
+			var stats = profileData.stats;
+			var bookingItems = bookingsData.bookings || [];
+			$summary.html(
+				'<div class="cabinet-grid">' +
+				'<div class="cabinet-card cabinet-card--profile"><span class="cabinet-label">???????</span><h3>' + user.name + '</h3><p><strong>Email:</strong> ' + user.email + '</p><p><strong>???????:</strong> ' + (user.phone || '?? ?? ???????') + '</p><p><strong>??? ?????:</strong> ' + (user.provider === 'google' ? 'Google' : 'Email ? ??????') + '</p><a href="#" class="cabinet-link js-logout">????? ? ???????</a></div>' +
+				'<div class="cabinet-card"><span class="cabinet-label">??????????</span><h3>' + stats.total_bookings + '</h3><p>???????? ?? ?????????? ?????? ? ?????? ????????.</p></div>' +
+				'<div class="cabinet-card"><span class="cabinet-label">??????? ??????????</span><h3>' + (stats.last_booking_at ? new Date(stats.last_booking_at).toLocaleDateString('uk-UA') : '?? ?????') + '</h3><p>???? ?????????? ?????????? ??????????.</p></div>' +
+				'</div>'
+			);
+
+			if (!bookingItems.length) {
+				$bookings.html('<div class="cabinet-empty"><h3>????????? ???? ?????</h3><p>??????? ???? ?? ????? ?? ???????? ?????????, ? ??? ?????? ????????? ???.</p><a href="destination.html" class="btn btn-primary">??????? ?? ?????</a></div>');
+				return;
+			}
+
+			$bookings.html(bookingItems.map(function(item) {
+				return '<article class="cabinet-booking">' +
+				'<div class="cabinet-booking__media" style="background-image:url(images/' + item.image + ')"></div>' +
+				'<div class="cabinet-booking__content">' +
+				'<span class="cabinet-booking__status">' + item.status + '</span>' +
+				'<h3>' + item.title + '</h3>' +
+				'<p>' + item.city + ', ' + item.country + '</p>' +
+				'<ul class="cabinet-booking__meta"><li>????: ' + item.date_from + '</li><li>?????: ' + item.people_count + '</li><li>??????????: ' + item.duration_days + ' ????</li><li>????: $' + item.price + '</li></ul>' +
+				(item.notes ? '<p class="cabinet-booking__notes">?????????: ' + item.notes + '</p>' : '') +
+				'</div></article>';
+			}).join(''));
+		};
+
+		var loadCabinet = function() {
+			if (!authState.user) {
+				renderGuest();
+				return;
+			}
+			Promise.all([ apiRequest('/api/profile'), apiRequest('/api/bookings') ]).then(function(results) {
+				if (!results[0].ok || !results[1].ok) {
+					renderGuest();
+					return;
+				}
+				renderProfile(results[0], results[1]);
+			});
+		};
+
+		document.addEventListener('travel-auth-updated', loadCabinet);
+		loadCabinet();
+	};
+	cabinetPage();
+
+	fetchAuthStatus();
+	attachBookingButtons();
 
 })(jQuery);
