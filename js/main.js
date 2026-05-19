@@ -148,10 +148,18 @@
 
 	var updateAuthUi = function() {
 		var $ctaLinks = $('.js-open-register');
+		var $adminLink = $('.js-admin-link');
+		if (!$adminLink.length && $('.js-cabinet-link').length) {
+			$adminLink = $('<li class="nav-item js-admin-link" hidden><a href="admin.html" class="nav-link">Адмін-панель</a></li>');
+			$('.js-cabinet-link').after($adminLink);
+		}
 		if (authState.user && authState.user.name) {
-			$ctaLinks.text('\u041a\u0430\u0431\u0456\u043d\u0435\u0442: ' + authState.user.name.split(' ')[0]);
+			$ctaLinks.text('Кабінет: ' + authState.user.name.split(' ')[0]);
 		} else {
-			$ctaLinks.text('\u0417\u0430\u0431\u0440\u043e\u043d\u044e\u0432\u0430\u0442\u0438 \u0437\u0430\u0440\u0430\u0437');
+			$ctaLinks.text('Забронювати зараз');
+		}
+		if ($adminLink.length) {
+			$adminLink.prop('hidden', !(authState.user && authState.user.is_admin));
 		}
 		document.dispatchEvent(new CustomEvent('travel-auth-updated', { detail: authState.user }));
 	};
@@ -212,10 +220,10 @@
 			$body.removeClass('modal-open');
 		};
 
-		$('.js-open-register').on('click', function(event) {
+		$(document).on('click', '.js-open-register', function(event) {
 			event.preventDefault();
 			if (authState.user) {
-				window.location.href = 'cabinet.html';
+				window.location.href = authState.user.is_admin ? 'admin.html' : 'cabinet.html';
 				return;
 			}
 			openModal($(this).data('authMode') || 'register');
@@ -241,7 +249,7 @@
 				authState.user = data.user || null;
 				updateAuthUi();
 				setAlert(data.message || '\u0412\u0445\u0456\u0434 \u0447\u0435\u0440\u0435\u0437 Google \u0432\u0438\u043a\u043e\u043d\u0430\u043d\u043e.', true);
-				setTimeout(function() { closeModal(); window.location.href = 'cabinet.html'; }, 900);
+				setTimeout(function() { closeModal(); window.location.href = authState.user.is_admin ? 'admin.html' : 'cabinet.html'; }, 900);
 			});
 		});
 
@@ -272,7 +280,7 @@
 				updateAuthUi();
 				$form[0].reset();
 				setAlert(data.message || '\u041e\u043f\u0435\u0440\u0430\u0446\u0456\u044e \u0432\u0438\u043a\u043e\u043d\u0430\u043d\u043e \u0443\u0441\u043f\u0456\u0448\u043d\u043e.', true);
-				setTimeout(function() { closeModal(); window.location.href = 'cabinet.html'; }, 900);
+				setTimeout(function() { closeModal(); window.location.href = authState.user.is_admin ? 'admin.html' : 'cabinet.html'; }, 900);
 			});
 		});
 
@@ -316,22 +324,93 @@
 				body: formBody(payload)
 			}).then(function(data) {
 				if (!data.ok) {
-					showAlert(data.message || '?? ??????? ?????????? ????????????.', false);
+					showAlert(data.message || 'Не вдалося відправити повідомлення.', false);
 					return;
 				}
 				$form[0].reset();
-				showAlert(data.message || '???????????? ?????????.', true);
+				showAlert(data.message || 'Повідомлення збережено.', true);
 			});
 		});
 	};
 	contactForm();
 
+	var escapeHtml = function(value) {
+		return $('<div>').text(value == null ? '' : String(value)).html();
+	};
+
+	var formatDate = function(value) {
+		if (!value) { return 'Ще не заплановано'; }
+		var parsed = new Date(value);
+		if (Number.isNaN(parsed.getTime())) { return value; }
+		return parsed.toLocaleDateString('uk-UA', { year: 'numeric', month: 'long', day: 'numeric' });
+	};
+
+
+	var parsePickerDate = function(value) {
+		if (!value) { return ''; }
+		var parts = String(value).split('/');
+		if (parts.length !== 3) { return value; }
+		var month = parts[0].padStart(2, '0');
+		var day = parts[1].padStart(2, '0');
+		var year = parts[2];
+		return year + '-' + month + '-' + day;
+	};
+
+	var getToursRequestUrl = function() {
+		var params = new URLSearchParams(window.location.search);
+		var apiParams = new URLSearchParams();
+		['query', 'country', 'city', 'date_from', 'price_min', 'price_max', 'transport', 'duration_days', 'available_seats', 'sort'].forEach(function(key) {
+			var value = params.get(key);
+			if (value) { apiParams.set(key, value); }
+		});
+		var queryString = apiParams.toString();
+		return '/api/tours' + (queryString ? '?' + queryString : '');
+	};
+
+	var syncTourCards = function() {
+		var $cards = $('.project-wrap');
+		if (!$cards.length) { return; }
+		var $empty = $('.js-tour-empty');
+		if (!$empty.length) {
+			$empty = $('<div class="col-12 js-tour-empty" hidden><div class="cabinet-empty"><h3>Нічого не знайдено</h3><p>Спробуйте змінити фільтри або обрати іншу дату подорожі.</p></div></div>');
+			$cards.last().parent().append($empty);
+		}
+		if (!toursCache.length) {
+			$cards.parent().attr('hidden', true);
+			$empty.prop('hidden', false);
+			return;
+		}
+		$empty.prop('hidden', true);
+		$cards.each(function(index) {
+			var $card = $(this);
+			var tour = toursCache[index];
+			if (!tour) {
+				$card.parent().attr('hidden', true);
+				return;
+			}
+			$card.parent().attr('hidden', false);
+			$card.find('.img').attr('href', 'tour.html?id=' + tour.id).css('background-image', 'url(images/' + escapeHtml(tour.image) + ')');
+			$card.find('.price').text('$' + tour.price + '/особа');
+			$card.find('.days').text(tour.duration_days + ' днів туру');
+			$card.find('h3 a').attr('href', 'tour.html?id=' + tour.id).text(tour.title);
+			$card.find('.location').html('<span class="ion-ios-map"></span> Відправлення: ' + escapeHtml(tour.departure_city));
+			var seatsAvailable = parseInt(tour.seats_available, 10) || 0;
+			var features = [
+				'<li><span class="flaticon-sun-umbrella"></span>' + escapeHtml(tour.country) + '</li>',
+				'<li><span class="flaticon-mountains"></span>' + escapeHtml(tour.transport) + '</li>',
+				'<li><span class="flaticon-king-size"></span>' + escapeHtml(seatsAvailable) + ' вільних місць</li>'
+			];
+			$card.find('ul').html(features.join(''));
+		});
+	};
+
 	var attachBookingButtons = function() {
 		var $cards = $('.project-wrap .text');
 		if (!$cards.length) { return; }
 		if (!toursCache.length) {
-			apiRequest('/api/tours').then(function(data) {
+			apiRequest(getToursRequestUrl()).then(function(data) {
 				toursCache = data.tours || [];
+				syncTourCards();
 				attachBookingButtons();
 			});
 			return;
@@ -339,44 +418,406 @@
 
 		$cards.each(function(index) {
 			var $text = $(this);
-			if ($text.find('.js-book-tour').length) { return; }
+			$text.find('.booking-tour-meta, .booking-tour-action').remove();
 			var tour = toursCache[index];
 			if (!tour) { return; }
-			$text.append('<div class="booking-tour-action"><button type="button" class="btn btn-primary js-book-tour" data-tour-id="' + tour.id + '" data-tour-title="' + tour.title.replace(/"/g, '&quot;') + '">??????????? ???</button></div>');
+			var seatsAvailable = parseInt(tour.seats_available, 10) || 0;
+			var isSoldOut = seatsAvailable <= 0;
+			var meta = '' +
+				'<div class="booking-tour-meta">' +
+				'<span class="booking-tour-pill">' + escapeHtml(tour.route_code) + '</span>' +
+				'<span class="booking-tour-pill">Виїзд: ' + escapeHtml(formatDate(tour.departure_date)) + '</span>' +
+				'<span class="booking-tour-pill">Вільно місць: ' + escapeHtml(seatsAvailable) + '</span>' +
+				'</div>';
+			var button = '' +
+				'<div class="booking-tour-action">' +
+				'<a href="tour.html?id=' + tour.id + '" class="btn btn-white booking-tour-action__link">Детальніше</a>' +
+				'<button type="button" class="btn btn-primary js-book-tour" ' +
+				'data-tour-id="' + tour.id + '" ' +
+				'data-tour-title="' + escapeHtml(tour.title) + '" ' +
+				'data-tour-route="' + escapeHtml(tour.route_code) + '" ' +
+				'data-tour-date="' + escapeHtml(tour.departure_date) + '" ' +
+				'data-tour-seats="' + seatsAvailable + '" ' +
+				(isSoldOut ? 'disabled' : '') + '>' +
+				(isSoldOut ? 'Місць немає' : 'Забронювати місце') +
+				'</button>' +
+				'</div>';
+			$text.append(meta + button);
 		});
 	};
 
-	var bookingHandler = function() {
+	var tourSearchForms = function() {
+		$('.search-property-1').on('submit', function(event) {
+			event.preventDefault();
+			var $form = $(this);
+			var params = new URLSearchParams();
+			var query = $.trim($form.find('input[type="text"]').first().val());
+			var dateFrom = parsePickerDate($.trim($form.find('.checkin_date').val()));
+			var priceMax = $.trim($form.find('select').val());
+			if (query) { params.set('query', query); }
+			if (dateFrom) { params.set('date_from', dateFrom); }
+			if (priceMax) { params.set('price_max', String(priceMax).replace(/[^\d]/g, '')); }
+			window.location.href = 'destination.html' + (params.toString() ? '?' + params.toString() : '');
+		});
+	};
+	tourSearchForms();
+
+	var tourDetailPage = function() {
+		var $page = $('.js-tour-detail-page');
+		if (!$page.length) { return; }
+		var params = new URLSearchParams(window.location.search);
+		var tourId = parseInt(params.get('id'), 10);
+		var $content = $('.js-tour-detail-content');
+		if (!tourId) {
+			$content.html('<div class="cabinet-empty"><h3>Тур не обрано</h3><p>Поверніться до каталогу і відкрийте потрібну подорож.</p><a href="destination.html" class="btn btn-primary">До всіх турів</a></div>');
+			return;
+		}
+		apiRequest('/api/tours/' + tourId).then(function(data) {
+			if (!data.ok || !data.tour) {
+				$content.html('<div class="cabinet-empty"><h3>Тур не знайдено</h3><p>Можливо, він був змінений або тимчасово недоступний.</p><a href="destination.html" class="btn btn-primary">Повернутися до каталогу</a></div>');
+				return;
+			}
+			var tour = data.tour;
+			toursCache = [tour];
+			var seatsAvailable = parseInt(tour.seats_available, 10) || 0;
+			var seatPreview = (tour.seat_map && tour.seat_map.layout ? tour.seat_map.layout.slice(0, 12) : []).map(function(seat) {
+				var occupied = tour.seat_map.occupied.indexOf(seat) !== -1;
+				return '<span class="tour-seat-badge' + (occupied ? ' is-occupied' : '') + '">' + escapeHtml(seat) + '</span>';
+			}).join('');
+			$content.html('' +
+				'<div class="row align-items-start">' +
+				'<div class="col-lg-6 mb-4">' +
+				'<div class="tour-detail__image" style="background-image:url(images/' + escapeHtml(tour.image) + ')"></div>' +
+				'</div>' +
+				'<div class="col-lg-6">' +
+				'<div class="tour-detail__panel">' +
+				'<div class="booking-tour-meta"><span class="booking-tour-pill">' + escapeHtml(tour.route_code) + '</span><span class="booking-tour-pill">' + escapeHtml(tour.transport) + '</span><span class="booking-tour-pill">' + escapeHtml(seatsAvailable) + ' місць</span></div>' +
+				'<h2 class="tour-detail__title">' + escapeHtml(tour.title) + '</h2>' +
+				'<p class="tour-detail__lead">' + escapeHtml(tour.description) + '</p>' +
+				'<div class="tour-detail__stats">' +
+				'<div><span>Країна</span><strong>' + escapeHtml(tour.country) + '</strong></div>' +
+				'<div><span>Місто</span><strong>' + escapeHtml(tour.city) + '</strong></div>' +
+				'<div><span>Дата виїзду</span><strong>' + escapeHtml(formatDate(tour.departure_date)) + '</strong></div>' +
+				'<div><span>Тривалість</span><strong>' + escapeHtml(tour.duration_days) + ' днів</strong></div>' +
+				'<div><span>Відправлення</span><strong>' + escapeHtml(tour.departure_city) + '</strong></div>' +
+				'<div><span>Ціна</span><strong>$' + escapeHtml(tour.price) + ' / особа</strong></div>' +
+				'</div>' +
+				'<div class="tour-detail__section"><h3>Умови бронювання</h3><p>Після вибору місць заявка зберігається в кабінеті, а менеджер підтверджує бронювання та фінальну оплату.</p></div>' +
+				'<div class="tour-detail__section"><h3>Карта місць</h3><div class="tour-seat-preview">' + seatPreview + '</div></div>' +
+				'<div class="booking-tour-action tour-detail__actions">' +
+				'<a href="destination.html" class="btn btn-white booking-tour-action__link">Усі маршрути</a>' +
+				'<button type="button" class="btn btn-primary js-book-tour" data-tour-id="' + tour.id + '" data-tour-title="' + escapeHtml(tour.title) + '" data-tour-route="' + escapeHtml(tour.route_code) + '" data-tour-date="' + escapeHtml(tour.departure_date) + '" data-tour-seats="' + seatsAvailable + '" ' + (seatsAvailable <= 0 ? 'disabled' : '') + '>' + (seatsAvailable <= 0 ? 'Місць немає' : 'Забронювати тур') + '</button>' +
+				'</div>' +
+				'</div>' +
+				'</div>' +
+				'</div>');
+		});
+	};
+	tourDetailPage();
+	var bookingPlanner = function() {
+		var $modal = $('#booking-planner-modal');
+		if (!$modal.length) { return; }
+		var plannerState = { tour: null, selectedSeats: [], passengerCount: 1 };
+		var $body = $('body');
+		var $summary = $modal.find('.js-planner-summary');
+		var $seatMap = $modal.find('.js-seat-map');
+		var $passengerFields = $modal.find('.js-passenger-fields');
+		var $form = $modal.find('.js-planner-form');
+		var $alert = $modal.find('.js-planner-alert');
+		var $count = $modal.find('.js-passenger-count');
+		var $total = $modal.find('.js-planner-total');
+		var $date = $modal.find('[name="date_from"]');
+		var $notes = $modal.find('[name="notes"]');
+		var $split = $modal.find('.js-split-booking');
+
+		var closePlanner = function() {
+			$modal.removeClass('is-open').attr('aria-hidden', 'true');
+			$body.removeClass('modal-open');
+		};
+
+		var setAlert = function(message, isSuccess) {
+			$alert.text(message).toggleClass('is-success', !!isSuccess).prop('hidden', false);
+		};
+
+		var clearAlert = function() {
+			$alert.prop('hidden', true).removeClass('is-success').text('');
+		};
+
+		var syncTotal = function() {
+			var price = plannerState.tour ? Number(plannerState.tour.price || 0) : 0;
+			$total.text('$' + (price * plannerState.passengerCount).toFixed(0));
+		};
+
+		var renderPassengerFields = function() {
+			var cards = [];
+			for (var i = 0; i < plannerState.passengerCount; i++) {
+				var seat = plannerState.selectedSeats[i] || 'Оберіть місце';
+				cards.push('' +
+					'<div class="booking-planner__passenger">' +
+					'<span class="booking-planner__passenger-title">Пасажир ' + (i + 1) + '</span>' +
+					'<div class="booking-planner__passenger-seat">Місце: ' + escapeHtml(seat) + '</div>' +
+					'<input type="text" class="form-control js-passenger-name" data-passenger-index="' + i + '" placeholder="' + (i === 0 ? 'Ваше ім\'я та прізвище' : 'Ім\'я та прізвище пасажира') + '" ' + (i === 0 ? 'value="' + escapeHtml(authState.user ? authState.user.name : '') + '"' : '') + ($split.is(':checked') && i > 0 ? ' disabled' : ' required') + '>' +
+					($split.is(':checked') && i > 0 ? '<small class="booking-planner__split-note">Пасажир заповнить дані за своїм захищеним посиланням.</small>' : '') +
+					'</div>');
+			}
+			$passengerFields.html(cards.join(''));
+		};
+
+		var renderSeatMap = function() {
+			if (!plannerState.tour) { return; }
+			var seatMap = plannerState.tour.seat_map || { layout: [], occupied: [] };
+			var transport = String(plannerState.tour.transport || '').toLowerCase();
+			$seatMap.removeClass('booking-planner__map--train booking-planner__map--bus');
+			if (transport.indexOf('train') !== -1) { $seatMap.addClass('booking-planner__map--train'); }
+			if (transport.indexOf('bus') !== -1) { $seatMap.addClass('booking-planner__map--bus'); }
+			$seatMap.html(seatMap.layout.map(function(seatLabel) {
+				var occupied = seatMap.occupied.indexOf(seatLabel) !== -1;
+				var selected = plannerState.selectedSeats.indexOf(seatLabel) !== -1;
+				var classes = 'seat' + (occupied ? ' seat--occupied' : '') + (selected ? ' seat--selected' : '');
+				return '<button type="button" class="' + classes + ' js-seat-toggle" data-seat="' + escapeHtml(seatLabel) + '" ' + (occupied ? 'disabled' : '') + '>' + escapeHtml(seatLabel) + '</button>';
+			}).join(''));
+			renderPassengerFields();
+			syncTotal();
+		};
+
+		var openPlanner = function(tour) {
+			plannerState.tour = tour;
+			plannerState.selectedSeats = [];
+			plannerState.passengerCount = 1;
+			clearAlert();
+			$split.prop('checked', false);
+			$notes.val('');
+			$date.val(String(tour.departure_date || '').slice(0, 10));
+			$count.html('');
+			for (var i = 1; i <= Math.max(1, Math.min(6, parseInt(tour.seats_available, 10) || 1)); i++) {
+				$count.append('<option value="' + i + '">' + i + ' пас.</option>');
+			}
+			$count.val('1');
+			$summary.html('' +
+				'<div class="booking-planner__card"><span>Маршрут</span><strong>' + escapeHtml(tour.route_code) + '</strong></div>' +
+				'<div class="booking-planner__card"><span>Транспорт</span><strong>' + escapeHtml(tour.transport) + '</strong></div>' +
+				'<div class="booking-planner__card"><span>Вільно місць</span><strong>' + escapeHtml(tour.seats_available) + '</strong></div>');
+			$modal.addClass('is-open').attr('aria-hidden', 'false');
+			$body.addClass('modal-open');
+			renderSeatMap();
+		};
+
+		$count.on('change', function() {
+			plannerState.passengerCount = parseInt($(this).val(), 10) || 1;
+			if (plannerState.selectedSeats.length > plannerState.passengerCount) {
+				plannerState.selectedSeats = plannerState.selectedSeats.slice(0, plannerState.passengerCount);
+			}
+			renderSeatMap();
+		});
+
+		$split.on('change', function() {
+			renderPassengerFields();
+		});
+
+		$(document).on('click', '.js-seat-toggle', function() {
+			var seat = $(this).data('seat');
+			var index = plannerState.selectedSeats.indexOf(seat);
+			if (index !== -1) {
+				plannerState.selectedSeats.splice(index, 1);
+			} else {
+				if (plannerState.selectedSeats.length >= plannerState.passengerCount) {
+					setAlert('Спочатку зменште кількість пасажирів або зніміть одне з уже обраних місць.', false);
+					return;
+				}
+				plannerState.selectedSeats.push(seat);
+			}
+			clearAlert();
+			renderSeatMap();
+		});
+
 		$(document).on('click', '.js-book-tour', function() {
 			if (!authState.user) {
 				var $trigger = $('.js-open-register').first();
 				$trigger.attr('data-auth-mode', 'login').trigger('click').removeAttr('data-auth-mode');
 				return;
 			}
+			var tourId = parseInt($(this).data('tour-id'), 10);
+			var tour = toursCache.find(function(item) { return parseInt(item.id, 10) === tourId; });
+			if (!tour) {
+                return;
+			}
+			openPlanner(tour);
+		});
 
-			var tourId = $(this).data('tour-id');
-			var tourTitle = $(this).data('tour-title');
-			var dateFrom = window.prompt('??????? ?????? ???? ??????? ??????? ??? ???? "' + tourTitle + '" (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
-			if (!dateFrom) { return; }
-			var peopleCount = window.prompt('??????? ????? ???? ?????????????', '2');
-			if (!peopleCount) { return; }
-			var notes = window.prompt("????????? ????????? ?? ?????????? (??????'??????):", '') || '';
+		$modal.find('.js-close-planner').on('click', function() { closePlanner(); });
+		$(document).on('keydown', function(event) { if (event.key === 'Escape' && $modal.hasClass('is-open')) { closePlanner(); } });
 
+		$form.on('submit', function(event) {
+			event.preventDefault();
+			clearAlert();
+			if (!plannerState.tour) { return; }
+			if (plannerState.selectedSeats.length !== plannerState.passengerCount) {
+				setAlert('Оберіть місце для кожного пасажира.', false);
+				return;
+			}
+			var isSplitBooking = $split.is(':checked');
+			var passengerNames = [];
+			$form.find('.js-passenger-name').each(function() {
+				if (!$(this).prop('disabled')) {
+					passengerNames.push($.trim($(this).val()));
+				}
+			});
+			if (passengerNames.some(function(name) { return !name; })) {
+				setAlert(isSplitBooking ? 'Вкажіть своє імʼя для головного місця.' : 'Вкажіть імена всіх пасажирів.', false);
+				return;
+			}
 			apiRequest('/api/bookings', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
-				body: formBody({ tour_id: tourId, date_from: dateFrom, people_count: peopleCount, notes: notes })
+				body: formBody({
+					tour_id: plannerState.tour.id,
+					date_from: $date.val(),
+					seats_reserved: plannerState.passengerCount,
+					selected_seats: plannerState.selectedSeats.join(', '),
+					passenger_manifest: passengerNames.join(', '),
+					split_booking: isSplitBooking ? 'true' : 'false',
+					notes: $.trim($notes.val())
+				})
 			}).then(function(data) {
 				if (!data.ok) {
-					window.alert(data.message || '?? ??????? ???????? ??????????.');
+					setAlert(data.message || 'Не вдалося завершити бронювання.', false);
 					return;
 				}
-				window.alert(data.message || '?????????? ????????.');
+				if (data.split_links && data.split_links.length) {
+					var linksHtml = data.split_links.map(function(link) {
+						return '<li><strong>Місце ' + escapeHtml(link.seat_code) + ':</strong> <a href="' + escapeHtml(link.url) + '" target="_blank" rel="noopener">' + escapeHtml(link.url) + '</a></li>';
+					}).join('');
+					setAlert('Бронювання створено. Посилання для попутників збережено у кабінеті.', true);
+					$passengerFields.html('<div class="booking-planner__share"><strong>Безпечні посилання для пасажирів</strong><ul>' + linksHtml + '</ul></div>');
+				} else {
+					setAlert(data.message || 'Бронювання створено.', true);
+				}
+				toursCache = [];
+				$('.booking-tour-meta, .booking-tour-action').remove();
+				attachBookingButtons();
+				document.dispatchEvent(new CustomEvent('travel-auth-updated', { detail: authState.user }));
+				if (!(data.split_links && data.split_links.length)) {
+					setTimeout(function() { closePlanner(); }, 900);
+				}
 			});
 		});
 	};
-	bookingHandler();
+	bookingPlanner();
 
+	var adminPage = function() {
+		var $page = $('.js-admin-page');
+		if (!$page.length) { return; }
+		var $list = $('.js-admin-bookings');
+		var $alert = $('.js-admin-alert');
+		var $query = $('.js-admin-query');
+		var $status = $('.js-admin-status-filter');
+		var $analytics = $('.js-admin-analytics');
+
+		var setAdminAlert = function(message, isSuccess) {
+			$alert.text(message).toggleClass('is-success', !!isSuccess).prop('hidden', false);
+		};
+
+		var loadAdminBookings = function() {
+			if (!authState.user) {
+				$list.html('<div class="cabinet-empty"><h3>Потрібен вхід менеджера</h3><p>Увійдіть у менеджерський акаунт, щоб переглядати всі бронювання.</p><button type="button" class="btn btn-primary js-open-register" data-auth-mode="login">Увійти</button></div>');
+				return;
+			}
+			if (!authState.user.is_admin) {
+				$list.html('<div class="cabinet-empty"><h3>Недостатньо прав</h3><p>Ця сторінка доступна лише менеджеру або адміністратору.</p></div>');
+				return;
+			}
+			var params = new URLSearchParams();
+			if ($.trim($query.val())) { params.set('query', $.trim($query.val())); }
+			if ($status.val()) { params.set('status', $status.val()); }
+			apiRequest('/api/admin/bookings' + (params.toString() ? '?' + params.toString() : '')).then(function(data) {
+				if (!data.ok) {
+					$list.html('<div class="cabinet-empty"><h3>Не вдалося завантажити дані</h3><p>' + escapeHtml(data.message || 'Спробуйте оновити сторінку.') + '</p></div>');
+					return;
+				}
+				var items = data.bookings || [];
+				if (!items.length) {
+					$list.html('<div class="cabinet-empty"><h3>Бронювань не знайдено</h3><p>Спробуйте змінити пошук або фільтр за статусом.</p></div>');
+					return;
+				}
+				$list.html(items.map(function(item) {
+					var passengerProgress = item.is_split_booking ? '<br><strong>Заповнено:</strong> ' + escapeHtml(item.passengers_completed || 0) + ' з ' + escapeHtml(item.seats_reserved || 0) : '';
+					var splitLinks = (item.passenger_links || []).map(function(link) {
+						return '<li><span>' + escapeHtml(link.seat_code || '-') + '</span><a href="' + escapeHtml(link.url) + '" target="_blank" rel="noopener">лінк</a><small>' + escapeHtml(link.full_name || 'очікує') + '</small></li>';
+					}).join('');
+					return '<article class="admin-booking">' +
+					'<div class="admin-booking__head"><div><span class="booking-tour-pill">' + escapeHtml(item.booking_reference) + '</span><h3>' + escapeHtml(item.title) + '</h3><p>' + escapeHtml(item.city + ', ' + item.country) + '</p></div>' +
+					'<div class="admin-booking__status"><label>Статус</label><select class="form-control js-admin-status" data-booking-id="' + item.id + '">' +
+					'<option value="Pending confirmation"' + (item.status === 'Pending confirmation' ? ' selected' : '') + '>Очікує підтвердження</option>' +
+					'<option value="Partially filled"' + (item.status === 'Partially filled' ? ' selected' : '') + '>Частково заповнено</option>' +
+					'<option value="Ready for processing"' + (item.status === 'Ready for processing' ? ' selected' : '') + '>Готово до обробки</option>' +
+					'<option value="Confirmed"' + (item.status === 'Confirmed' ? ' selected' : '') + '>Підтверджено</option>' +
+					'<option value="Awaiting payment"' + (item.status === 'Awaiting payment' ? ' selected' : '') + '>Очікує оплати</option>' +
+					'<option value="Cancelled"' + (item.status === 'Cancelled' ? ' selected' : '') + '>Скасовано</option>' +
+					'<option value="Completed"' + (item.status === 'Completed' ? ' selected' : '') + '>Завершено</option>' +
+					'</select></div></div>' +
+					'<div class="admin-booking__grid">' +
+					'<div><strong>Клієнт:</strong> ' + escapeHtml(item.user_name || item.traveler_name) + '<br><strong>Email:</strong> ' + escapeHtml(item.user_email || item.traveler_email) + '<br><strong>Телефон:</strong> ' + escapeHtml(item.traveler_phone) + '</div>' +
+					'<div><strong>Виїзд:</strong> ' + escapeHtml(formatDate(item.date_from)) + '<br><strong>Транспорт:</strong> ' + escapeHtml(item.transport) + '<br><strong>Місць:</strong> ' + escapeHtml(item.seats_reserved) + '</div>' +
+					'<div><strong>Місця:</strong> ' + escapeHtml(item.selected_seats || 'не вибрано') + '<br><strong>Пасажири:</strong> ' + escapeHtml(item.passenger_manifest || item.traveler_name) + passengerProgress + '</div>' +
+					'</div>' +
+					(item.is_split_booking && splitLinks ? '<ul class="admin-booking__links">' + splitLinks + '</ul>' : '') +
+					(item.notes ? '<p class="admin-booking__notes">Побажання: ' + escapeHtml(item.notes) + '</p>' : '') +
+					'</article>';
+				}).join(''));
+			});
+		};
+
+		var loadAdminAnalytics = function() {
+			if (!$analytics.length || !authState.user || !authState.user.is_admin) { return; }
+			apiRequest('/api/admin/analytics').then(function(data) {
+				if (!data.ok) {
+					$analytics.html('');
+					return;
+				}
+				var summary = data.summary || {};
+				var routes = data.routes || [];
+				var rows = routes.map(function(route) {
+					var signalLabel = route.signal === 'deficit' ? 'Дефіцит' : (route.signal === 'discount' ? 'Потрібна дія' : 'Стабільно');
+					return '<article class="admin-forecast admin-forecast--' + escapeHtml(route.signal) + '">' +
+						'<div><span class="booking-tour-pill">' + escapeHtml(route.route_code) + '</span><h3>' + escapeHtml(route.title) + '</h3><p>' + escapeHtml(route.city + ', ' + route.country) + ' · ' + escapeHtml(formatDate(route.departure_date)) + '</p></div>' +
+						'<div class="admin-forecast__meter"><span style="width:' + Math.min(100, Number(route.projected_load_percent || 0)) + '%"></span></div>' +
+						'<div><strong>' + escapeHtml(signalLabel) + '</strong><p>' + escapeHtml(route.recommendation) + '</p></div>' +
+						'<ul><li>Зараз: ' + escapeHtml(route.load_percent || 0) + '%</li><li>Прогноз: ' + escapeHtml(route.projected_load_percent || 0) + '%</li><li>Вільно: ' + escapeHtml(route.seats_available || 0) + '</li></ul>' +
+					'</article>';
+				}).join('');
+				$analytics.html('<div class="admin-analytics__summary">' +
+					'<div><span>Маршрутів</span><strong>' + escapeHtml(summary.routes_total || 0) + '</strong></div>' +
+					'<div><span>Дефіцитні</span><strong>' + escapeHtml(summary.deficit_routes || 0) + '</strong></div>' +
+					'<div><span>Потребують знижки</span><strong>' + escapeHtml(summary.discount_routes || 0) + '</strong></div>' +
+					'<div><span>Середня завантаженість</span><strong>' + escapeHtml(summary.average_load_percent || 0) + '%</strong></div>' +
+					'</div><div class="admin-analytics__routes">' + rows + '</div>');
+			});
+		};
+
+		$('.js-admin-search').on('click', function() { loadAdminBookings(); });
+		$(document).on('change', '.js-admin-status', function() {
+			var bookingId = $(this).data('booking-id');
+			var statusValue = $(this).val();
+			apiRequest('/api/admin/bookings/' + bookingId + '/status', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+				body: formBody({ status: statusValue })
+			}).then(function(data) {
+				if (!data.ok) {
+					setAdminAlert(data.message || 'Не вдалося оновити статус.', false);
+					loadAdminBookings();
+					return;
+				}
+				setAdminAlert(data.message || 'Статус оновлено.', true);
+			});
+		});
+
+		document.addEventListener('travel-auth-updated', loadAdminBookings);
+		document.addEventListener('travel-auth-updated', loadAdminAnalytics);
+		loadAdminBookings();
+		loadAdminAnalytics();
+	};
+	adminPage();
 	var cabinetPage = function() {
 		var $page = $('.js-cabinet-page');
 		if (!$page.length) { return; }
@@ -384,36 +825,50 @@
 		var $bookings = $('.js-cabinet-bookings');
 
 		var renderGuest = function() {
-			$summary.html('<div class="cabinet-empty"><h3>???????? ? ???? ??????</h3><p>????? ????? ??? ?????????? ???? ??????????, ????????? ???? ?? ??????? ???????.</p><button type="button" class="btn btn-primary js-open-register">?????? ??? ???????????????</button></div>');
+			$summary.html('<div class="cabinet-empty"><h3>Увійдіть у свій акаунт</h3><p>Після входу тут з’являться ваші бронювання, контактні дані та історія поїздок.</p><button type="button" class="btn btn-primary js-open-register">Увійти або зареєструватися</button></div>');
 			$bookings.html('');
 		};
 
 		var renderProfile = function(profileData, bookingsData) {
 			var user = profileData.user;
-			var stats = profileData.stats;
+			var stats = profileData.stats || {};
 			var bookingItems = bookingsData.bookings || [];
 			$summary.html(
 				'<div class="cabinet-grid">' +
-				'<div class="cabinet-card cabinet-card--profile"><span class="cabinet-label">???????</span><h3>' + user.name + '</h3><p><strong>Email:</strong> ' + user.email + '</p><p><strong>???????:</strong> ' + (user.phone || '?? ?? ???????') + '</p><p><strong>??? ?????:</strong> ' + (user.provider === 'google' ? 'Google' : 'Email ? ??????') + '</p><a href="#" class="cabinet-link js-logout">????? ? ???????</a></div>' +
-				'<div class="cabinet-card"><span class="cabinet-label">??????????</span><h3>' + stats.total_bookings + '</h3><p>???????? ?? ?????????? ?????? ? ?????? ????????.</p></div>' +
-				'<div class="cabinet-card"><span class="cabinet-label">??????? ??????????</span><h3>' + (stats.last_booking_at ? new Date(stats.last_booking_at).toLocaleDateString('uk-UA') : '?? ?????') + '</h3><p>???? ?????????? ?????????? ??????????.</p></div>' +
+				'<div class="cabinet-card cabinet-card--profile"><span class="cabinet-label">Профіль</span><h3>' + escapeHtml(user.name) + '</h3><p><strong>Email:</strong> ' + escapeHtml(user.email) + '</p><p><strong>Телефон:</strong> ' + escapeHtml(user.phone || 'ще не вказано') + '</p><p><strong>Тип входу:</strong> ' + escapeHtml(user.provider === 'google' ? 'Google' : 'Email і пароль') + '</p><a href="#" class="cabinet-link js-logout">Вийти з акаунта</a></div>' +
+				'<div class="cabinet-card"><span class="cabinet-label">Бронювання</span><h3>' + escapeHtml(stats.total_bookings || 0) + '</h3><p>Заявок у кабінеті: ' + escapeHtml(stats.total_bookings || 0) + '. Зарезервовано місць: ' + escapeHtml(stats.total_seats || 0) + '.</p></div>' +
+				'<div class="cabinet-card"><span class="cabinet-label">Наступна поїздка</span><h3>' + escapeHtml(formatDate(stats.next_trip_date)) + '</h3><p>Найближча дата виїзду серед ваших активних бронювань.</p></div>' +
 				'</div>'
 			);
 
 			if (!bookingItems.length) {
-				$bookings.html('<div class="cabinet-empty"><h3>????????? ???? ?????</h3><p>??????? ???? ?? ????? ?? ???????? ?????????, ? ??? ?????? ????????? ???.</p><a href="destination.html" class="btn btn-primary">??????? ?? ?????</a></div>');
+				$bookings.html('<div class="cabinet-empty"><h3>Бронювань поки немає</h3><p>Оберіть один із маршрутів на сторінці напрямків, і ваше бронювання одразу з’явиться тут.</p><a href="destination.html" class="btn btn-primary">Перейти до маршрутів</a></div>');
 				return;
 			}
 
 			$bookings.html(bookingItems.map(function(item) {
+				var passengerList = String(item.passenger_manifest || '')
+					.split(',')
+					.map(function(name) { return $.trim(name); })
+					.filter(Boolean)
+					.map(function(name) { return '<li>' + escapeHtml(name) + '</li>'; })
+					.join('');
+				var selectedSeats = String(item.selected_seats || '') || 'буде визначено менеджером';
+				var totalPrice = (Number(item.price || 0) * Number(item.seats_reserved || 0)).toFixed(0);
+				var splitLinks = (item.passenger_links || []).map(function(link) {
+					return '<li><span>Місце ' + escapeHtml(link.seat_code || '-') + '</span><a href="' + escapeHtml(link.url) + '" target="_blank" rel="noopener">посилання</a>' + (link.full_name ? '<small>' + escapeHtml(link.full_name) + '</small>' : '<small>очікує дані</small>') + '</li>';
+				}).join('');
 				return '<article class="cabinet-booking">' +
-				'<div class="cabinet-booking__media" style="background-image:url(images/' + item.image + ')"></div>' +
+				'<div class="cabinet-booking__media" style="background-image:url(images/' + escapeHtml(item.image) + ')"></div>' +
 				'<div class="cabinet-booking__content">' +
-				'<span class="cabinet-booking__status">' + item.status + '</span>' +
-				'<h3>' + item.title + '</h3>' +
-				'<p>' + item.city + ', ' + item.country + '</p>' +
-				'<ul class="cabinet-booking__meta"><li>????: ' + item.date_from + '</li><li>?????: ' + item.people_count + '</li><li>??????????: ' + item.duration_days + ' ????</li><li>????: $' + item.price + '</li></ul>' +
-				(item.notes ? '<p class="cabinet-booking__notes">?????????: ' + item.notes + '</p>' : '') +
+				'<span class="cabinet-booking__status">' + escapeHtml(item.status) + '</span>' +
+				'<h3>' + escapeHtml(item.title) + '</h3>' +
+				'<p>' + escapeHtml(item.city + ', ' + item.country) + '</p>' +
+				'<ul class="cabinet-booking__meta"><li>Маршрут: ' + escapeHtml(item.route_code) + '</li><li>Дата виїзду: ' + escapeHtml(formatDate(item.date_from)) + '</li><li>Місць: ' + escapeHtml(item.seats_reserved) + '</li><li>Транспорт: ' + escapeHtml(item.transport) + '</li><li>Відправлення: ' + escapeHtml(item.departure_city) + '</li><li>Місця: ' + escapeHtml(selectedSeats) + '</li><li>Сума: $' + escapeHtml(totalPrice) + '</li></ul>' +
+				'<div class="cabinet-booking__traveler"><strong>Контактна особа:</strong> ' + escapeHtml(item.traveler_name) + '<br><strong>Email:</strong> ' + escapeHtml(item.traveler_email) + '<br><strong>Телефон:</strong> ' + escapeHtml(item.traveler_phone) + '<br><strong>Код бронювання:</strong> ' + escapeHtml(item.booking_reference) + '</div>' +
+				(passengerList ? '<div class="cabinet-booking__traveler"><strong>Пасажири:</strong><ul class="cabinet-booking__passengers">' + passengerList + '</ul></div>' : '') +
+				(item.is_split_booking && splitLinks ? '<div class="cabinet-booking__traveler"><strong>Захищені посилання:</strong><ul class="cabinet-booking__passenger-links">' + splitLinks + '</ul></div>' : '') +
+				(item.notes ? '<p class="cabinet-booking__notes">Побажання: ' + escapeHtml(item.notes) + '</p>' : '') +
 				'</div></article>';
 			}).join(''));
 		};
@@ -437,7 +892,69 @@
 	};
 	cabinetPage();
 
+	var passengerVerificationPage = function() {
+		var $page = $('.js-passenger-page');
+		if (!$page.length) { return; }
+		var $panel = $('.js-passenger-panel');
+		var params = new URLSearchParams(window.location.search);
+		var token = params.get('token') || '';
+
+		var renderError = function(message) {
+			$panel.html('<div class="cabinet-empty"><h3>Посилання недоступне</h3><p>' + escapeHtml(message || 'Перевірте адресу або попросіть замовника надіслати посилання ще раз.') + '</p></div>');
+		};
+
+		if (!token) {
+			renderError('У посиланні немає токена пасажира.');
+			return;
+		}
+
+		apiRequest('/api/passenger-verification/' + encodeURIComponent(token)).then(function(data) {
+			if (!data.ok) {
+				renderError(data.message);
+				return;
+			}
+			var passenger = data.passenger || {};
+			var completed = !!passenger.full_name;
+			$panel.html('' +
+				'<div class="passenger-verify__header">' +
+				'<span class="booking-tour-pill">' + escapeHtml(passenger.booking_reference) + '</span>' +
+				'<h1>' + escapeHtml(passenger.title) + '</h1>' +
+				'<p>' + escapeHtml(passenger.city + ', ' + passenger.country) + ' · ' + escapeHtml(formatDate(passenger.date_from || passenger.departure_date)) + '</p>' +
+				'</div>' +
+				'<div class="passenger-verify__seat"><span>Ваше місце</span><strong>' + escapeHtml(passenger.seat_code || '-') + '</strong></div>' +
+				'<form class="passenger-verify__form js-passenger-form" novalidate>' +
+				'<div class="booking-modal__alert js-passenger-alert" hidden></div>' +
+				'<div class="form-group"><label for="passenger-full-name">ПІБ пасажира</label><input id="passenger-full-name" name="full_name" type="text" class="form-control" value="' + escapeHtml(passenger.full_name || '') + '" placeholder="Наприклад: Петренко Іван Сергійович" required></div>' +
+				'<div class="passenger-verify__meta"><div><strong>Маршрут:</strong> ' + escapeHtml(passenger.route_code) + '</div><div><strong>Транспорт:</strong> ' + escapeHtml(passenger.transport) + '</div><div><strong>Відправлення:</strong> ' + escapeHtml(passenger.departure_city) + '</div></div>' +
+				'<button type="submit" class="btn btn-primary">' + (completed ? 'Оновити дані' : 'Зберегти дані') + '</button>' +
+				'</form>');
+		});
+
+		$(document).on('submit', '.js-passenger-form', function(event) {
+			event.preventDefault();
+			var $form = $(this);
+			var $alert = $form.find('.js-passenger-alert');
+			$alert.prop('hidden', true).removeClass('is-success').text('');
+			apiRequest('/api/passenger-verification/' + encodeURIComponent(token), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+				body: formBody({ full_name: $.trim($form.find('[name="full_name"]').val()) })
+			}).then(function(data) {
+				$alert.text(data.message || (data.ok ? 'Дані збережено.' : 'Не вдалося зберегти дані.')).toggleClass('is-success', !!data.ok).prop('hidden', false);
+			});
+		});
+	};
+	passengerVerificationPage();
+
 	fetchAuthStatus();
 	attachBookingButtons();
 
 })(jQuery);
+
+
+
+
+
+
+
+
