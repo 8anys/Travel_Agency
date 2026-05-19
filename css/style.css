@@ -8125,6 +8125,52 @@ h1, h2, h3, h4, h5,
     .ftco-navbar-light .navbar-nav > .nav-item.cta.cta-colored a {
       border: 1px solid #ff5959;
       background: #ff5959 !important; }
+    .ftco-navbar-light .navbar-nav > .nav-item.account-menu-wrap {
+      position: relative; }
+    .ftco-navbar-light .navbar-nav > .nav-item.account-menu-wrap > a:after {
+      content: "";
+      display: inline-block;
+      width: 0;
+      height: 0;
+      margin-left: 8px;
+      vertical-align: middle;
+      border-top: 5px solid #fff;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent; }
+    .account-menu {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      z-index: 50;
+      min-width: 190px;
+      padding: 8px;
+      border-radius: 8px;
+      background: #fff;
+      -webkit-box-shadow: 0 18px 48px rgba(16, 24, 40, 0.18);
+      box-shadow: 0 18px 48px rgba(16, 24, 40, 0.18); }
+    .account-menu__item {
+      display: block;
+      width: 100%;
+      padding: 10px 12px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #344054;
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer; }
+    .account-menu__item:hover {
+      background: #fff7f2;
+      color: #f15d30;
+      text-decoration: none; }
+    .account-menu__item--danger {
+      color: #b42318; }
+    @media (max-width: 991.98px) {
+      .account-menu {
+        position: static;
+        min-width: 0;
+        margin: 10px 0 0;
+        box-shadow: none; } }
     .ftco-navbar-light .navbar-nav > .nav-item.active > a {
       color: #f9ab30; }
     @media (max-width: 991.98px) {

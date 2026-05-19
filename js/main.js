@@ -154,9 +154,29 @@
 			$('.js-cabinet-link').after($adminLink);
 		}
 		if (authState.user && authState.user.name) {
-			$ctaLinks.text('Кабінет: ' + authState.user.name.split(' ')[0]);
+			$ctaLinks.each(function() {
+				var $link = $(this);
+				var $item = $link.closest('.nav-item');
+				var destination = authState.user.is_admin ? 'admin.html' : 'cabinet.html';
+				$link.text('Кабінет: ' + authState.user.name.split(' ')[0]).addClass('js-account-toggle').attr('aria-expanded', 'false');
+				$item.addClass('account-menu-wrap');
+				if (!$item.find('.js-account-menu').length) {
+					$item.append('' +
+						'<div class="account-menu js-account-menu" hidden>' +
+						'<a href="' + destination + '" class="account-menu__item js-account-home">Мій кабінет</a>' +
+						'<button type="button" class="account-menu__item account-menu__item--danger js-logout">Вийти</button>' +
+						'</div>');
+				}
+				$item.find('.js-account-home').attr('href', destination).text(authState.user.is_admin ? 'Адмін-панель' : 'Мій кабінет');
+			});
 		} else {
-			$ctaLinks.text('Забронювати зараз');
+			$ctaLinks.each(function() {
+				var $link = $(this);
+				var $item = $link.closest('.nav-item');
+				$link.text('Забронювати зараз').removeClass('js-account-toggle').removeAttr('aria-expanded');
+				$item.removeClass('account-menu-wrap is-account-open');
+				$item.find('.js-account-menu').remove();
+			});
 		}
 		if ($adminLink.length) {
 			$adminLink.prop('hidden', !(authState.user && authState.user.is_admin));
@@ -223,10 +243,20 @@
 		$(document).on('click', '.js-open-register', function(event) {
 			event.preventDefault();
 			if (authState.user) {
-				window.location.href = authState.user.is_admin ? 'admin.html' : 'cabinet.html';
+				var $item = $(this).closest('.nav-item');
+				$('.account-menu-wrap').not($item).removeClass('is-account-open').find('.js-account-menu').prop('hidden', true);
+				$item.toggleClass('is-account-open');
+				$item.find('.js-account-menu').prop('hidden', !$item.hasClass('is-account-open'));
+				$(this).attr('aria-expanded', $item.hasClass('is-account-open') ? 'true' : 'false');
 				return;
 			}
 			openModal($(this).data('authMode') || 'register');
+		});
+
+		$(document).on('click', function(event) {
+			if ($(event.target).closest('.account-menu-wrap').length) { return; }
+			$('.account-menu-wrap').removeClass('is-account-open').find('.js-account-menu').prop('hidden', true);
+			$('.js-account-toggle').attr('aria-expanded', 'false');
 		});
 
 		$modal.find('.js-close-register').on('click', function() { closeModal(); });
@@ -293,7 +323,7 @@
 			}).then(function() {
 				authState.user = null;
 				updateAuthUi();
-				if ($('.js-cabinet-page').length) {
+				if ($('.js-cabinet-page, .js-admin-page').length) {
 					window.location.reload();
 				}
 			});
