@@ -414,7 +414,7 @@
 		$empty.prop('hidden', true);
 		while ($cards.length < toursCache.length) {
 			var $newColumn = $cards.first().parent().clone(false, false);
-			$newColumn.removeAttr('hidden').addClass('js-generated-tour-card');
+			$newColumn.removeAttr('hidden').addClass('js-generated-tour-card').removeClass('ftco-animate ftco-animated fadeInUp fadeInLeft fadeInRight fadeIn item-animate');
 			$newColumn.find('.booking-tour-meta, .booking-tour-action').remove();
 			$newColumn.insertBefore($empty);
 			$cards = $('.project-wrap');

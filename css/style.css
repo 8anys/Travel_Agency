@@ -8305,6 +8305,19 @@ h1, h2, h3, h4, h5,
     width: 100%;
     opacity: .2; }
 
+.hero-wrap.hero-wrap-2 .slider-text {
+  align-items: center !important;
+  padding-top: 96px;
+  min-height: 520px; }
+
+.hero-wrap.hero-wrap-2 .slider-text > div {
+  padding-bottom: 0 !important; }
+
+@media (max-width: 991.98px) {
+  .hero-wrap.hero-wrap-2 .slider-text {
+    padding-top: 36px;
+    min-height: 420px; } }
+
 .slider-text .text {
   width: 100%; }
 
