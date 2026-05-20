@@ -861,6 +861,7 @@
 		if (!$page.length) { return; }
 		var $summary = $('.js-cabinet-summary');
 		var $bookings = $('.js-cabinet-bookings');
+		var editState = { booking: null, selectedSeats: [] };
 
 		var renderGuest = function() {
 			$summary.html('<div class="cabinet-empty"><h3>Увійдіть у свій акаунт</h3><p>Після входу тут з’являться ваші бронювання, контактні дані та історія поїздок.</p><button type="button" class="btn btn-primary js-open-register">Увійти або зареєструватися</button></div>');
@@ -893,6 +894,8 @@
 					.join('');
 				var selectedSeats = String(item.selected_seats || '') || 'буде визначено менеджером';
 				var totalPrice = (Number(item.price || 0) * Number(item.seats_reserved || 0)).toFixed(0);
+				var canManage = item.can_manage === true || item.can_manage === 'true';
+				var manageNote = canManage ? 'Можна редагувати або видалити до 7 днів перед виїздом.' : 'Редагування вже закрито: до поїздки менше 7 днів.';
 				var splitLinks = (item.passenger_links || []).map(function(link) {
 					return '<li><span>Місце ' + escapeHtml(link.seat_code || '-') + '</span><a href="' + escapeHtml(link.url) + '" target="_blank" rel="noopener">посилання</a>' + (link.full_name ? '<small>' + escapeHtml(link.full_name) + '</small>' : '<small>очікує дані</small>') + '</li>';
 				}).join('');
@@ -907,23 +910,161 @@
 				(passengerList ? '<div class="cabinet-booking__traveler"><strong>Пасажири:</strong><ul class="cabinet-booking__passengers">' + passengerList + '</ul></div>' : '') +
 				(item.is_split_booking && splitLinks ? '<div class="cabinet-booking__traveler"><strong>Захищені посилання:</strong><ul class="cabinet-booking__passenger-links">' + splitLinks + '</ul></div>' : '') +
 				(item.notes ? '<p class="cabinet-booking__notes">Побажання: ' + escapeHtml(item.notes) + '</p>' : '') +
+				'<div class="cabinet-booking__manage"><p>' + escapeHtml(manageNote) + '</p><button type="button" class="btn btn-white js-edit-booking" data-booking-id="' + escapeHtml(item.id) + '" ' + (canManage ? '' : 'disabled') + '>Редагувати</button><button type="button" class="btn btn-primary js-delete-booking" data-booking-id="' + escapeHtml(item.id) + '" ' + (canManage ? '' : 'disabled') + '>Видалити</button></div>' +
 				'</div></article>';
 			}).join(''));
 		};
 
+		var ensureEditModal = function() {
+			var $modal = $('#cabinet-edit-modal');
+			if ($modal.length) { return $modal; }
+			$('body').append('' +
+				'<div class="booking-modal cabinet-edit-modal" id="cabinet-edit-modal" aria-hidden="true">' +
+				'<div class="booking-modal__backdrop js-close-cabinet-edit"></div>' +
+				'<div class="booking-modal__dialog booking-planner" role="dialog" aria-modal="true" aria-labelledby="cabinet-edit-title">' +
+				'<button type="button" class="booking-modal__close js-close-cabinet-edit" aria-label="Закрити редагування"><span class="ion-ios-close"></span></button>' +
+				'<div class="booking-modal__content booking-planner__content">' +
+				'<div class="booking-planner__intro"><span class="booking-auth__eyebrow">Booking manager</span><h2 class="booking-auth__title" id="cabinet-edit-title">Редагування поїздки</h2><p class="booking-auth__lead">Змінити місця та пасажирів можна тільки не пізніше ніж за 7 днів до дати виїзду.</p></div>' +
+				'<div class="booking-planner__surface"><div class="booking-modal__alert js-cabinet-edit-alert" hidden></div><div class="booking-planner__summary js-cabinet-edit-summary"></div><form class="js-cabinet-edit-form" novalidate><div class="booking-planner__legend"><span><i class="seat seat--available"></i> Вільне</span><span><i class="seat seat--selected"></i> Обране</span><span><i class="seat seat--occupied"></i> Зайняте</span></div><div class="booking-planner__map js-cabinet-edit-seats"></div><div class="booking-planner__passengers js-cabinet-edit-passengers"></div><div class="form-group booking-auth__full"><label for="cabinet-edit-notes">Побажання до поїздки</label><textarea id="cabinet-edit-notes" name="notes" class="form-control" rows="3"></textarea></div><div class="booking-planner__footer"><button type="submit" class="btn btn-primary booking-auth__submit">Зберегти зміни</button></div></form></div>' +
+				'</div></div></div>');
+			return $('#cabinet-edit-modal');
+		};
+
+		var renderEditModal = function() {
+			var $modal = ensureEditModal();
+			var booking = editState.booking;
+			if (!booking) { return; }
+			var seatMap = booking.seat_map || { layout: [], occupied: [] };
+			$modal.find('.js-cabinet-edit-summary').html('' +
+				'<div class="booking-planner__card"><span>Маршрут</span><strong>' + escapeHtml(booking.route_code) + '</strong></div>' +
+				'<div class="booking-planner__card"><span>Тур</span><strong>' + escapeHtml(booking.title) + '</strong></div>' +
+				'<div class="booking-planner__card"><span>Пасажирів</span><strong>' + escapeHtml(booking.seats_reserved) + '</strong></div>');
+			$modal.find('[name="notes"]').val(booking.notes || '');
+			$modal.find('.js-cabinet-edit-seats').html((seatMap.layout || []).map(function(seatLabel) {
+				var occupied = (seatMap.occupied || []).indexOf(seatLabel) !== -1;
+				var selected = editState.selectedSeats.indexOf(seatLabel) !== -1;
+				var classes = 'seat' + (occupied ? ' seat--occupied' : '') + (selected ? ' seat--selected' : '');
+				return '<button type="button" class="' + classes + ' js-cabinet-seat-toggle" data-seat="' + escapeHtml(seatLabel) + '" ' + (occupied ? 'disabled' : '') + '>' + escapeHtml(seatLabel) + '</button>';
+			}).join(''));
+			var passengers = booking.passengers || [];
+			var passengerCards = [];
+			for (var index = 0; index < parseInt(booking.seats_reserved, 10); index++) {
+				var passenger = passengers[index] || {};
+				var seat = editState.selectedSeats[index] || 'Оберіть місце';
+				passengerCards.push('<div class="booking-planner__passenger"><span class="booking-planner__passenger-title">Пасажир ' + (index + 1) + '</span><div class="booking-planner__passenger-seat">Місце: ' + escapeHtml(seat) + '</div><input type="text" class="form-control js-cabinet-passenger-name" value="' + escapeHtml(passenger.full_name || '') + '" placeholder="ПІБ пасажира" required></div>');
+			}
+			$modal.find('.js-cabinet-edit-passengers').html(passengerCards.join(''));
+		};
+
+		var openEditModal = function(bookingId) {
+			apiRequest('/api/bookings/' + bookingId).then(function(data) {
+				if (!data.ok) {
+					window.alert(data.message || 'Не вдалося відкрити бронювання.');
+					return;
+				}
+				editState.booking = data.booking;
+				editState.selectedSeats = (data.booking.selected_seats || []).slice();
+				renderEditModal();
+				ensureEditModal().addClass('is-open').attr('aria-hidden', 'false');
+				$('body').addClass('modal-open');
+			});
+		};
+
 		var loadCabinet = function() {
+			if (!authState.checked) {
+				$summary.html('<div class="cabinet-empty"><h3>Перевіряємо акаунт</h3><p>Зараз підтягнемо профіль і ваші бронювання.</p></div>');
+				$bookings.html('');
+				return;
+			}
 			if (!authState.user) {
 				renderGuest();
 				return;
 			}
 			Promise.all([ apiRequest('/api/profile'), apiRequest('/api/bookings') ]).then(function(results) {
 				if (!results[0].ok || !results[1].ok) {
-					renderGuest();
+					$bookings.html('<div class="cabinet-empty"><h3>Не вдалося завантажити бронювання</h3><p>' + escapeHtml((results[1] && results[1].message) || (results[0] && results[0].message) || 'Оновіть сторінку або увійдіть знову.') + '</p></div>');
 					return;
 				}
 				renderProfile(results[0], results[1]);
 			});
 		};
+
+		$(document).on('click', '.js-edit-booking', function() {
+			openEditModal($(this).data('booking-id'));
+		});
+
+		$(document).on('click', '.js-delete-booking', function() {
+			var bookingId = $(this).data('booking-id');
+			if (!window.confirm('Видалити це бронювання? Місця стануть доступними для інших клієнтів.')) { return; }
+			apiRequest('/api/bookings/' + bookingId, { method: 'DELETE' }).then(function(data) {
+				if (!data.ok) {
+					window.alert(data.message || 'Не вдалося видалити бронювання.');
+					return;
+				}
+				loadCabinet();
+				document.dispatchEvent(new CustomEvent('travel-bookings-changed'));
+			});
+		});
+
+		$(document).on('click', '.js-close-cabinet-edit', function() {
+			ensureEditModal().removeClass('is-open').attr('aria-hidden', 'true');
+			$('body').removeClass('modal-open');
+		});
+
+		$(document).on('click', '.js-cabinet-seat-toggle', function() {
+			var seat = $(this).data('seat');
+			var index = editState.selectedSeats.indexOf(seat);
+			if (index !== -1) {
+				editState.selectedSeats.splice(index, 1);
+			} else {
+				if (editState.selectedSeats.length >= parseInt(editState.booking.seats_reserved, 10)) {
+					ensureEditModal().find('.js-cabinet-edit-alert').text('Спочатку зніміть одне з обраних місць.').prop('hidden', false);
+					return;
+				}
+				editState.selectedSeats.push(seat);
+			}
+			ensureEditModal().find('.js-cabinet-edit-alert').prop('hidden', true).text('');
+			renderEditModal();
+		});
+
+		$(document).on('submit', '.js-cabinet-edit-form', function(event) {
+			event.preventDefault();
+			var $modal = ensureEditModal();
+			var $alert = $modal.find('.js-cabinet-edit-alert');
+			var passengerNames = [];
+			$modal.find('.js-cabinet-passenger-name').each(function() {
+				passengerNames.push($.trim($(this).val()));
+			});
+			if (editState.selectedSeats.length !== parseInt(editState.booking.seats_reserved, 10)) {
+				$alert.text('Оберіть місце для кожного пасажира.').prop('hidden', false);
+				return;
+			}
+			if (passengerNames.some(function(name) { return !name; })) {
+				$alert.text('Заповніть ПІБ кожного пасажира.').prop('hidden', false);
+				return;
+			}
+			apiRequest('/api/bookings/' + editState.booking.id, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+				body: formBody({
+					selected_seats: editState.selectedSeats.join(', '),
+					passenger_manifest: passengerNames.join(', '),
+					notes: $.trim($modal.find('[name="notes"]').val())
+				})
+			}).then(function(data) {
+				if (!data.ok) {
+					$alert.text(data.message || 'Не вдалося зберегти зміни.').prop('hidden', false);
+					return;
+				}
+				$alert.text(data.message || 'Зміни збережено.').addClass('is-success').prop('hidden', false);
+				setTimeout(function() {
+					$modal.removeClass('is-open').attr('aria-hidden', 'true');
+					$('body').removeClass('modal-open');
+					loadCabinet();
+					document.dispatchEvent(new CustomEvent('travel-bookings-changed'));
+				}, 700);
+			});
+		});
 
 		document.addEventListener('travel-auth-updated', loadCabinet);
 		loadCabinet();

@@ -307,6 +307,26 @@ def request_arg_int(name: str) -> int | None:
         return None
 
 
+def parse_csv_values(value: Any, uppercase: bool = False) -> list[str]:
+    items = [item.strip() for item in str(value or '').split(',') if item.strip()]
+    if uppercase:
+        return [item.upper() for item in items]
+    return items
+
+
+def can_manage_booking_date(value: Any) -> bool:
+    if isinstance(value, datetime):
+        target_date = value.date()
+    elif isinstance(value, date):
+        target_date = value
+    else:
+        try:
+            target_date = datetime.fromisoformat(str(value)).date()
+        except ValueError:
+            return False
+    return (target_date - date.today()).days >= 7
+
+
 def apply_schema(cur: psycopg.Cursor[Any]) -> None:
     schema_sql = SCHEMA_PATH.read_text(encoding='utf-8').lstrip('\ufeff')
     statements = [statement.strip() for statement in schema_sql.split(';') if statement.strip()]
@@ -650,15 +670,20 @@ def transport_seat_layout(transport: str) -> list[str]:
     return [f'{row}{column}' for row in rows for column in columns]
 
 
-def occupied_seats(cur: psycopg.Cursor[Any], tour_id: int) -> set[str]:
+def occupied_seats(cur: psycopg.Cursor[Any], tour_id: int, exclude_booking_id: int | None = None) -> set[str]:
+    params: list[Any] = [tour_id]
+    exclude_sql = ''
+    if exclude_booking_id is not None:
+        exclude_sql = 'AND b.id <> %s'
+        params.append(exclude_booking_id)
     cur.execute(
-        '''
+        f'''
         SELECT bs.seat_code
         FROM booking_seats bs
         JOIN bookings b ON b.id = bs.booking_id
-        WHERE b.tour_id = %s AND b.status <> 'Cancelled'
+        WHERE b.tour_id = %s AND b.status <> 'Cancelled' {exclude_sql}
         ''',
-        (tour_id,),
+        params,
     )
     occupied: set[str] = set()
     for row in cur.fetchall():
@@ -905,11 +930,13 @@ def bookings_api():
                                    'full_name', bp.full_name,
                                    'is_primary', bp.is_primary,
                                    'completed_at', bp.completed_at,
-                                   'url', CASE WHEN bp.verification_token IS NOT NULL THEN CONCAT(%s, bp.verification_token) ELSE '' END
+                                   'url', CASE WHEN bp.verification_token IS NOT NULL THEN CONCAT(%s::text, bp.verification_token) ELSE '' END
                                ) ORDER BY bp.id)
                                FROM booking_passengers bp
                                WHERE bp.booking_id = b.id
                            ), '[]'::json) AS passenger_links,
+                           (b.date_from - CURRENT_DATE) AS days_until_trip,
+                           (b.date_from >= CURRENT_DATE + INTERVAL '7 days') AS can_manage,
                            t.route_code, t.title, t.country, t.city, t.price, t.duration_days, t.image,
                            t.departure_city, t.departure_date, t.transport
                     FROM bookings b
@@ -926,8 +953,8 @@ def bookings_api():
     tour_id = int(data.get('tour_id', 0) or 0)
     seats_reserved = max(1, int(data.get('seats_reserved', data.get('people_count', 1)) or 1))
     notes = data.get('notes', '').strip()
-    selected_seats = [seat.strip().upper() for seat in str(data.get('selected_seats', '')).split(',') if seat.strip()]
-    passenger_names = [name.strip() for name in str(data.get('passenger_manifest', '')).split(',') if name.strip()]
+    selected_seats = parse_csv_values(data.get('selected_seats', ''), uppercase=True)
+    passenger_names = parse_csv_values(data.get('passenger_manifest', ''))
     is_split_booking = str(data.get('split_booking', 'false')).lower() == 'true'
 
     with db_connection() as conn:
@@ -1020,6 +1047,133 @@ def bookings_api():
     })
 
 
+@app.route('/api/bookings/<int:booking_id>', methods=['GET', 'PATCH', 'DELETE'])
+def booking_detail_api(booking_id: int):
+    user = require_auth()
+
+    with db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                SELECT b.id, b.user_id, b.tour_id, b.booking_reference, b.date_from, b.seats_reserved,
+                       b.notes, b.status, b.is_split_booking,
+                       t.title, t.route_code, t.transport, t.seats_total, t.departure_date
+                FROM bookings b
+                JOIN tours t ON t.id = b.tour_id
+                WHERE b.id = %s AND b.user_id = %s
+                LIMIT 1
+                ''',
+                (booking_id, user['id']),
+            )
+            booking = cur.fetchone()
+            if not booking:
+                return json_response({'ok': False, 'message': 'Бронювання не знайдено.'}, 404)
+
+            if request.method == 'GET':
+                cur.execute(
+                    '''
+                    SELECT seat_code
+                    FROM booking_seats
+                    WHERE booking_id = %s
+                    ORDER BY seat_code
+                    ''',
+                    (booking_id,),
+                )
+                seats = [row['seat_code'] for row in cur.fetchall()]
+                cur.execute(
+                    '''
+                    SELECT id, full_name, seat_code, is_primary, completed_at
+                    FROM booking_passengers
+                    WHERE booking_id = %s
+                    ORDER BY id
+                    ''',
+                    (booking_id,),
+                )
+                passengers = cur.fetchall()
+                layout = transport_seat_layout(str(booking['transport']))[: int(booking['seats_total'])]
+                occupied = occupied_seats(cur, int(booking['tour_id']), exclude_booking_id=booking_id)
+                booking['selected_seats'] = seats
+                booking['passengers'] = passengers
+                booking['seat_map'] = {'layout': layout, 'occupied': sorted(list(occupied))}
+                booking['can_manage'] = can_manage_booking_date(booking['date_from'])
+                return json_response({'ok': True, 'booking': booking})
+
+            if not can_manage_booking_date(booking['date_from']):
+                return json_response({
+                    'ok': False,
+                    'message': 'Редагування або видалення доступне лише не пізніше ніж за 7 днів до поїздки.',
+                }, 403)
+
+            if request.method == 'DELETE':
+                cur.execute('DELETE FROM bookings WHERE id = %s AND user_id = %s', (booking_id, user['id']))
+                conn.commit()
+                return json_response({'ok': True, 'message': 'Бронювання видалено.'})
+
+            data = request_data()
+            selected_seats = parse_csv_values(data.get('selected_seats', ''), uppercase=True)
+            passenger_names = parse_csv_values(data.get('passenger_manifest', ''))
+            notes = data.get('notes', '').strip()
+            seats_reserved = int(booking['seats_reserved'])
+
+            if len(selected_seats) != seats_reserved:
+                return json_response({'ok': False, 'message': 'Кількість місць має відповідати кількості пасажирів.'}, 422)
+            if len(set(selected_seats)) != len(selected_seats):
+                return json_response({'ok': False, 'message': 'Не можна вибрати одне й те саме місце двічі.'}, 422)
+            if len(passenger_names) != seats_reserved:
+                return json_response({'ok': False, 'message': 'Вкажіть ПІБ для кожного пасажира.'}, 422)
+
+            layout = set(transport_seat_layout(str(booking['transport']))[: int(booking['seats_total'])])
+            occupied = occupied_seats(cur, int(booking['tour_id']), exclude_booking_id=booking_id)
+            if any(seat not in layout for seat in selected_seats):
+                return json_response({'ok': False, 'message': 'Одне або кілька місць недоступні для цього транспорту.'}, 422)
+            if any(seat in occupied for seat in selected_seats):
+                return json_response({'ok': False, 'message': 'Частина місць уже зайнята іншим бронюванням.'}, 409)
+
+            cur.execute('UPDATE bookings SET notes = %s WHERE id = %s', (notes, booking_id))
+            cur.execute('DELETE FROM booking_seats WHERE booking_id = %s', (booking_id,))
+            for seat in selected_seats:
+                cur.execute(
+                    'INSERT INTO booking_seats (booking_id, seat_code, created_at) VALUES (%s, %s, %s)',
+                    (booking_id, seat, utc_now()),
+                )
+
+            cur.execute(
+                '''
+                SELECT id
+                FROM booking_passengers
+                WHERE booking_id = %s
+                ORDER BY id
+                ''',
+                (booking_id,),
+            )
+            passenger_rows = cur.fetchall()
+            for index, passenger_name in enumerate(passenger_names):
+                seat = selected_seats[index]
+                completed_at = utc_now() if passenger_name else None
+                if index < len(passenger_rows):
+                    cur.execute(
+                        '''
+                        UPDATE booking_passengers
+                        SET full_name = %s, seat_code = %s, completed_at = %s
+                        WHERE id = %s
+                        ''',
+                        (passenger_name, seat, completed_at, passenger_rows[index]['id']),
+                    )
+                else:
+                    cur.execute(
+                        '''
+                        INSERT INTO booking_passengers (booking_id, full_name, seat_code, completed_at, created_at)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ''',
+                        (booking_id, passenger_name, seat, completed_at, utc_now()),
+                    )
+            if bool(booking['is_split_booking']):
+                refresh_split_booking_status(cur, booking_id)
+        conn.commit()
+
+    return json_response({'ok': True, 'message': 'Бронювання оновлено.'})
+
+
 @app.get('/api/admin/bookings')
 def admin_bookings_api():
     require_admin()
@@ -1067,7 +1221,7 @@ def admin_bookings_api():
                                'full_name', bp.full_name,
                                'is_primary', bp.is_primary,
                                'completed_at', bp.completed_at,
-                               'url', CASE WHEN bp.verification_token IS NOT NULL THEN CONCAT(%s, bp.verification_token) ELSE '' END
+                               'url', CASE WHEN bp.verification_token IS NOT NULL THEN CONCAT(%s::text, bp.verification_token) ELSE '' END
                            ) ORDER BY bp.id)
                            FROM booking_passengers bp
                            WHERE bp.booking_id = b.id

@@ -9930,6 +9930,30 @@ body.modal-open {
   font-size: 14px;
   line-height: 1.7; }
 
+.cabinet-booking__manage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #eef2f6; }
+
+.cabinet-booking__manage p {
+  flex: 1 1 260px;
+  margin: 0;
+  color: #667085; }
+
+.cabinet-booking__manage .btn {
+  min-width: 130px; }
+
+.cabinet-booking__manage .btn:disabled {
+  cursor: not-allowed;
+  opacity: .55; }
+
+.cabinet-edit-modal .booking-modal__dialog {
+  width: min(100%, 1120px); }
+
 @media (max-width: 991.98px) {
   .cabinet-grid {
     grid-template-columns: 1fr; }
