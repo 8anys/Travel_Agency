@@ -733,9 +733,9 @@ def auth_action():
         if '@' not in email:
             return json_response({'ok': False, 'message': 'Введіть коректний email.'}, 422)
         if len(password) < 6:
-            return json_response({'ok': False, 'message': 'Пароль має містити щонайменше 6 символів.'}, 422)
+            return json_response({'ok': False, 'field': 'password', 'message': 'Пароль має містити щонайменше 6 символів.'}, 422)
         if password != password_confirm:
-            return json_response({'ok': False, 'message': 'Паролі не співпадають.'}, 422)
+            return json_response({'ok': False, 'field': 'passwordConfirm', 'message': 'Паролі не співпадають.'}, 422)
         if not policy:
             return json_response({'ok': False, 'message': 'Потрібно погодитися на обробку персональних даних.'}, 422)
         if find_user_by_email(email):
@@ -774,7 +774,7 @@ def auth_action():
         from werkzeug.security import check_password_hash
 
         if not check_password_hash(user.get('password_hash') or '', password):
-            return json_response({'ok': False, 'message': 'Неправильний пароль.'}, 401)
+            return json_response({'ok': False, 'field': 'password', 'message': 'Неправильний пароль.'}, 401)
 
         sign_in(user)
         return json_response({'ok': True, 'message': 'Вхід виконано успішно.', 'user': current_user()})

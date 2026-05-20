@@ -9748,6 +9748,18 @@ textarea.form-control {
     background: #fff;
     box-shadow: 0 0 0 4px rgba(241, 93, 48, 0.12); }
 
+.booking-auth .form-control.is-invalid {
+  border-color: #dc2626 !important;
+  background: #fff7f7 !important;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1); }
+
+.booking-auth__field-error {
+  display: block;
+  margin-top: 6px;
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 600; }
+
 .booking-auth__checkbox {
   margin-top: 18px; }
   .booking-auth__checkbox label {

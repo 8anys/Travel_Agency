@@ -213,6 +213,15 @@
 
 		var clearAlert = function() {
 			$alert.prop('hidden', true).removeClass('is-success').text('');
+			$form.find('.is-invalid').removeClass('is-invalid');
+			$form.find('.booking-auth__field-error').remove();
+		};
+
+		var markInvalidField = function(fieldName, message) {
+			var $field = $form.find('[name="' + fieldName + '"]').first();
+			if (!$field.length) { return; }
+			$field.addClass('is-invalid').after('<small class="booking-auth__field-error">' + escapeHtml(message) + '</small>');
+			$field.trigger('focus');
 		};
 
 		var setMode = function(mode) {
@@ -296,6 +305,21 @@
 				passwordConfirm: $form.find('[name="passwordConfirm"]').val(),
 				policy: $form.find('[name="policy"]').is(':checked') ? 'true' : 'false'
 			};
+			if (!payload.password) {
+				markInvalidField('password', 'Введіть пароль.');
+				setAlert('Введіть пароль.', false);
+				return;
+			}
+			if (payload.password.length < 6) {
+				markInvalidField('password', 'Пароль має містити щонайменше 6 символів.');
+				setAlert('Пароль має містити щонайменше 6 символів.', false);
+				return;
+			}
+			if (mode === 'register' && payload.password !== payload.passwordConfirm) {
+				markInvalidField('passwordConfirm', 'Паролі не співпадають.');
+				setAlert('Паролі не співпадають.', false);
+				return;
+			}
 
 			apiRequest('/api/auth', {
 				method: 'POST',
@@ -304,6 +328,9 @@
 			}).then(function(data) {
 				if (!data.ok) {
 					setAlert(data.message || '\u0421\u0442\u0430\u043b\u0430\u0441\u044f \u043f\u043e\u043c\u0438\u043b\u043a\u0430. \u0421\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0449\u0435 \u0440\u0430\u0437.', false);
+					if (data.field) {
+						markInvalidField(data.field, data.message || 'Перевірте це поле.');
+					}
 					return;
 				}
 				authState.user = data.user || null;
