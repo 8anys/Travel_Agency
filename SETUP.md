@@ -1,5 +1,23 @@
 # Local Setup
 
+## Manager Login
+Default manager account for `admin.html`:
+
+- Email: `manager@travelagency.local`
+- Password: `Manager2026!`
+
+You can change these values before startup with environment variables:
+
+```powershell
+$env:ADMIN_EMAIL='manager@travelagency.local'
+$env:ADMIN_PASSWORD='Manager2026!'
+$env:ADMIN_NAME='Менеджер системи'
+```
+
+After login, open:
+
+`http://127.0.0.1:5000/admin.html`
+
 ## Що вже реалізовано
 - Реєстрація та вхід через серверний `Python API`
 - Збереження користувачів у базі даних `PostgreSQL`

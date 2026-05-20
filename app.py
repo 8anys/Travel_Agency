@@ -1353,6 +1353,58 @@ def admin_analytics_api():
                 '''
             )
             rows = cur.fetchall()
+            cur.execute(
+                '''
+                SELECT
+                    COUNT(b.id) AS total_bookings,
+                    COUNT(b.id) FILTER (WHERE b.status <> 'Cancelled') AS active_bookings,
+                    COUNT(b.id) FILTER (WHERE b.status = 'Cancelled') AS cancelled_bookings,
+                    COUNT(b.id) FILTER (WHERE b.status = 'Partially filled') AS partial_bookings,
+                    COUNT(b.id) FILTER (WHERE b.status = 'Ready for processing') AS ready_bookings,
+                    COALESCE(SUM(b.seats_reserved) FILTER (WHERE b.status <> 'Cancelled'), 0) AS active_seats,
+                    COALESCE(SUM(b.seats_reserved * t.price) FILTER (WHERE b.status <> 'Cancelled'), 0) AS booked_value,
+                    COUNT(b.id) FILTER (WHERE b.created_at >= CURRENT_DATE - INTERVAL '7 days') AS bookings_last_7_days,
+                    COUNT(b.id) FILTER (WHERE b.created_at >= CURRENT_DATE - INTERVAL '30 days') AS bookings_last_30_days
+                FROM bookings b
+                JOIN tours t ON t.id = b.tour_id
+                '''
+            )
+            overview = cur.fetchone() or {}
+
+            cur.execute(
+                '''
+                SELECT COUNT(*) AS upcoming_routes,
+                       COALESCE(SUM(seats_total), 0) AS upcoming_capacity
+                FROM tours
+                WHERE departure_date >= CURRENT_DATE
+                '''
+            )
+            capacity = cur.fetchone() or {}
+
+            cur.execute(
+                '''
+                SELECT b.status,
+                       COUNT(*) AS bookings_count,
+                       COALESCE(SUM(b.seats_reserved), 0) AS seats_count
+                FROM bookings b
+                GROUP BY b.status
+                ORDER BY bookings_count DESC, b.status ASC
+                '''
+            )
+            status_counts = cur.fetchall()
+
+            cur.execute(
+                '''
+                SELECT to_char(date_trunc('month', b.created_at), 'YYYY-MM') AS period,
+                       COUNT(*) AS bookings_count,
+                       COALESCE(SUM(b.seats_reserved), 0) AS seats_count
+                FROM bookings b
+                WHERE b.created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '5 months'
+                GROUP BY date_trunc('month', b.created_at)
+                ORDER BY date_trunc('month', b.created_at)
+                '''
+            )
+            monthly_trend = cur.fetchall()
 
     routes = []
     hot_count = 0
@@ -1400,7 +1452,41 @@ def admin_analytics_api():
         'discount_routes': weak_count,
         'average_load_percent': round((total_booked / total_capacity) * 100, 1) if total_capacity else 0,
     }
-    return json_response({'ok': True, 'summary': summary, 'routes': routes})
+    overview_payload = {
+        **overview,
+        **capacity,
+        'forecasted_revenue': overview.get('booked_value', 0),
+        'active_capacity_load_percent': round((total_booked / total_capacity) * 100, 1) if total_capacity else 0,
+    }
+    manager_actions = []
+    if hot_count:
+        manager_actions.append({
+            'type': 'deficit',
+            'title': 'Є дефіцитні напрямки',
+            'text': 'Попит іде швидше за план. Перевірте можливість підняття ціни або додаткового транспорту.',
+        })
+    if weak_count:
+        manager_actions.append({
+            'type': 'discount',
+            'title': 'Є рейси з низьким попитом',
+            'text': 'Запустіть акцію, персональну розсилку або перегляньте доцільність виїзду.',
+        })
+    if not manager_actions:
+        manager_actions.append({
+            'type': 'stable',
+            'title': 'Ситуація стабільна',
+            'text': 'Критичних відхилень немає. Достатньо стандартного моніторингу заявок.',
+        })
+
+    return json_response({
+        'ok': True,
+        'summary': summary,
+        'overview': overview_payload,
+        'status_counts': status_counts,
+        'monthly_trend': monthly_trend,
+        'manager_actions': manager_actions,
+        'routes': routes,
+    })
 
 @app.get('/api/profile')
 def profile_api():

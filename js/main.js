@@ -813,6 +813,10 @@
 					return;
 				}
 				var summary = data.summary || {};
+				var overview = data.overview || {};
+				var actions = data.manager_actions || [];
+				var statuses = data.status_counts || [];
+				var trend = data.monthly_trend || [];
 				var routes = data.routes || [];
 				var rows = routes.map(function(route) {
 					var signalLabel = route.signal === 'deficit' ? 'Дефіцит' : (route.signal === 'discount' ? 'Потрібна дія' : 'Стабільно');
@@ -823,12 +827,40 @@
 						'<ul><li>Зараз: ' + escapeHtml(route.load_percent || 0) + '%</li><li>Прогноз: ' + escapeHtml(route.projected_load_percent || 0) + '%</li><li>Вільно: ' + escapeHtml(route.seats_available || 0) + '</li></ul>' +
 					'</article>';
 				}).join('');
-				$analytics.html('<div class="admin-analytics__summary">' +
-					'<div><span>Маршрутів</span><strong>' + escapeHtml(summary.routes_total || 0) + '</strong></div>' +
-					'<div><span>Дефіцитні</span><strong>' + escapeHtml(summary.deficit_routes || 0) + '</strong></div>' +
-					'<div><span>Потребують знижки</span><strong>' + escapeHtml(summary.discount_routes || 0) + '</strong></div>' +
+				var actionCards = actions.map(function(action) {
+					return '<article class="admin-action admin-action--' + escapeHtml(action.type || 'stable') + '"><strong>' + escapeHtml(action.title) + '</strong><p>' + escapeHtml(action.text) + '</p></article>';
+				}).join('');
+				var statusRows = statuses.map(function(status) {
+					return '<li><span>' + escapeHtml(status.status || 'Без статусу') + '</span><strong>' + escapeHtml(status.bookings_count || 0) + '</strong><small>' + escapeHtml(status.seats_count || 0) + ' місць</small></li>';
+				}).join('');
+				var maxTrend = Math.max.apply(null, trend.map(function(item) { return Number(item.bookings_count || 0); }).concat([1]));
+				var trendBars = trend.map(function(item) {
+					var height = Math.max(8, Math.round((Number(item.bookings_count || 0) / maxTrend) * 100));
+					return '<div class="admin-trend__bar"><span style="height:' + height + '%"></span><strong>' + escapeHtml(item.bookings_count || 0) + '</strong><small>' + escapeHtml(item.period || '') + '</small></div>';
+				}).join('');
+				$analytics.html(
+					'<div class="admin-dashboard">' +
+					'<div class="admin-dashboard__head"><div><span class="booking-auth__eyebrow">Data analytics</span><h2>Прогнозування завантаженості</h2><p>Система аналізує бронювання, темп нових заявок і кількість днів до виїзду, щоб підсвітити ризики для менеджера.</p></div></div>' +
+					'<div class="admin-analytics__summary">' +
+					'<div><span>Активних бронювань</span><strong>' + escapeHtml(overview.active_bookings || 0) + '</strong></div>' +
+					'<div><span>Заброньовано місць</span><strong>' + escapeHtml(overview.active_seats || 0) + '</strong></div>' +
+					'<div><span>Орієнтовна сума</span><strong>$' + escapeHtml(Math.round(Number(overview.forecasted_revenue || 0))) + '</strong></div>' +
 					'<div><span>Середня завантаженість</span><strong>' + escapeHtml(summary.average_load_percent || 0) + '%</strong></div>' +
-					'</div><div class="admin-analytics__routes">' + rows + '</div>');
+					'</div>' +
+					'<div class="admin-dashboard__grid">' +
+					'<section class="admin-dashboard__panel"><h3>Ризики та рекомендації</h3><div class="admin-actions">' + actionCards + '</div></section>' +
+					'<section class="admin-dashboard__panel"><h3>Статуси бронювань</h3><ul class="admin-status-list">' + statusRows + '</ul></section>' +
+					'<section class="admin-dashboard__panel"><h3>Темп заявок</h3><div class="admin-trend">' + trendBars + '</div><p>За 7 днів: ' + escapeHtml(overview.bookings_last_7_days || 0) + ', за 30 днів: ' + escapeHtml(overview.bookings_last_30_days || 0) + '.</p></section>' +
+					'</div>' +
+					'<div class="admin-analytics__summary admin-analytics__summary--forecast">' +
+					'<div><span>Майбутніх маршрутів</span><strong>' + escapeHtml(summary.routes_total || 0) + '</strong></div>' +
+					'<div><span>Дефіцит</span><strong>' + escapeHtml(summary.deficit_routes || 0) + '</strong></div>' +
+					'<div><span>Потрібна дія</span><strong>' + escapeHtml(summary.discount_routes || 0) + '</strong></div>' +
+					'<div><span>Місткість рейсів</span><strong>' + escapeHtml(overview.upcoming_capacity || 0) + '</strong></div>' +
+					'</div>' +
+					'<div class="admin-analytics__routes">' + rows + '</div>' +
+					'</div>'
+				);
 			});
 		};
 
