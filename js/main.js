@@ -400,10 +400,11 @@
 	var syncTourCards = function() {
 		var $cards = $('.project-wrap');
 		if (!$cards.length) { return; }
+		var $grid = $cards.first().parent().parent();
 		var $empty = $('.js-tour-empty');
 		if (!$empty.length) {
 			$empty = $('<div class="col-12 js-tour-empty" hidden><div class="cabinet-empty"><h3>Нічого не знайдено</h3><p>Спробуйте змінити фільтри або обрати іншу дату подорожі.</p></div></div>');
-			$cards.last().parent().append($empty);
+			$grid.append($empty);
 		}
 		if (!toursCache.length) {
 			$cards.parent().attr('hidden', true);
@@ -411,6 +412,13 @@
 			return;
 		}
 		$empty.prop('hidden', true);
+		while ($cards.length < toursCache.length) {
+			var $newColumn = $cards.first().parent().clone(false, false);
+			$newColumn.removeAttr('hidden').addClass('js-generated-tour-card');
+			$newColumn.find('.booking-tour-meta, .booking-tour-action').remove();
+			$newColumn.insertBefore($empty);
+			$cards = $('.project-wrap');
+		}
 		$cards.each(function(index) {
 			var $card = $(this);
 			var tour = toursCache[index];
